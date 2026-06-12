@@ -64,7 +64,11 @@ cp .env.example .env
 
 ### Essential Toggles (`.env`):
 * `POCKETFLOW_VISUALIZE=true`: Set to `true` to auto-generate the visual topology diagram and code audit logs on every run.
+
+![mermaid](image.png)
 * `LANGFUSE_PUBLIC_KEY` & `LANGFUSE_SECRET_KEY`: Providing these keys triggers automated on-the-fly flow telemetries.
+
+![alt text](image-1.png)
 
 ---
 
