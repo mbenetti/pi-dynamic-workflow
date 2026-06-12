@@ -41,6 +41,17 @@ Unlike static scripts, this extension enables a purely agentic, reactive, and ob
 
 Your Pi environment discovers extensions placed globally or locally.
 
+### Local Project Installation (Recommended for this workspace)
+If you want to run and use the harness locally inside your current repository, simply link or copy the extension file into your project's local `.pi/extensions` directory:
+```bash
+# Create local extension directory if it doesn't exist
+mkdir -p .pi/extensions
+
+# Copy the TypeScript extension file inside
+cp .pi/extensions/pocketflow-harness.ts .pi/extensions/pocketflow-harness.ts
+```
+When you start `pi` in this directory, select **Yes** when prompted to "Trust project?" to load project-local extensions automatically.
+
 ### Global Installation (Available in ALL directories)
 Clone this repository directly into your global Pi agent extension folder:
 ```bash
