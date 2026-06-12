@@ -215,6 +215,7 @@ class ProcessNode(Node):
 ### 5. Running Workflows On-The-Fly with `uv` (Astral)
 For instant dependency loading and sandboxed execution without manually creating virtual environments or configuring requirements:
 * Declare any external dependencies using PEP 723 inline script metadata at the top of `main.py` inside the parameters.
+* **CRITICAL**: Always include `"pocketflow"` in the script `dependencies` metadata list! Because `uv run` isolates execution libraries, if `"pocketflow"` is omitted, nested script imports of `flow` and `nodes` will trigger `ModuleNotFoundError: No module named 'pocketflow'`.
 * The harness extension will automatically detect `uv` and run the script inside an isolated sandbox using `uv run main.py`. If you do not provide inline script metadata, the harness dynamically supplies requirements using `--with <deps>` flags.
 * You can also specify target Python version bounds explicitly on-the-fly (`requires-python = ">=3.12"`). `uv` will automatically download and utilize the desired Python version in isolation if needed!
 
@@ -224,13 +225,23 @@ For instant dependency loading and sandboxed execution without manually creating
 # dependencies = [
 #     "beautifulsoup4",
 #     "httpx",
-#     "instructor"
+#     "instructor",
+#     "pocketflow"
 # ]
 # ///
 
 from flow import ScanCookbookFlow
 ...
 ```
+
+### 6. Decoupled Auto-Tracing with Langfuse (`@trace_flow`)
+The dynamic harness automatically handles and injects tracing. If manual class tracing is specified:
+* **Never** import tracing via `from pocketflow import trace_flow` (this raises an `ImportError`).
+* **Always** import correctly using:
+  ```python
+  from tracing import trace_flow
+  ```
+* Ensure `pocketflow` and `tracing` are fully kept decoupled in custom modules.
 
 ### 6. Local OCR-Free PDF Parsing with `liteparse`
 When processing a large volume of PDFs locally within a Node construct, using `liteparse` (the native in-process Rust PDF compiler) is extremely powerful. Always disable OCR for high-speed pipelines:
