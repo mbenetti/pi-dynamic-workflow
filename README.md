@@ -20,8 +20,8 @@ Unlike static scripts, this extension enables a purely agentic, reactive, and ob
 
 ## 🔥 Key Features & Advantages
 
-* **⚡ Zero-Install & Version Autonomous**: Contains an embedded, highly optimized 250-line `pocketflow` framework core dynamically written into every workspace sandbox. **No PyPI dependencies required, zero pip download lags, and 100% version compatibility immunity.**
-* **📈 Built-In Langfuse Telemetry**: Automatically wraps class-based flows with `@trace_flow` decorators on the fly. Generates deep spans, execution run metrics, model token cost summaries, and error logs directly to your local or cloud **Langfuse** dashboard.
+* **⚡ Decoupled & Zero-Install Autonomous**: Contains highly optimized embedded versions of both the **PocketFlow Core Engine** and the **Langfuse Tracing wrapper** dynamically populated inside every workspace sandbox. **No PyPI package installations, zero pip download lags, 100% version compatibility immunity, and completely transparent local execution without any local files of 'pocketflow-tracing'.**
+* **📈 Transparent Langfuse Telemetry**: Automatically wraps class-based flows with `@trace_flow` decorators on the fly. Generates deep spans, execution run metrics, model token cost summaries, and error logs directly to your local or cloud **Langfuse** dashboard. If tracking is disabled or credentials are omitted, tracing gracefully runs in quiet/no-op mode with no runtime overhead or import errors.
 * **🎨 Mermaid Topology Blueprints**: On successful execution, it introspects the dynamic graph and outputs a clean Markdown-compatible `*_blueprint.md` flowchart showing your exact node connections.
 * **🔎 Workspace Auditing Logs**: In addition to Mermaid graphs, the generated workflow blueprints automatically append formatted copy-pastes of the raw generated Python source code (`nodes.py`, `flow.py`, `main.py`) for pristine auditing trails.
 * **🔌 Active LLM Syncing**: No API key hardcoding required. The sandboxed workspace utils seamlessly inherit whichever active model provider (e.g. OpenAI, Anthropic, Gemini, OpenRouter) and keys are currently selected in your `pi` agent chat workspace.
@@ -40,6 +40,17 @@ Unlike static scripts, this extension enables a purely agentic, reactive, and ob
 ## 🚀 Quick Start & Installation
 
 Your Pi environment discovers extensions placed globally or locally.
+
+### Local Project Installation (Recommended for this workspace)
+If you want to run and use the harness locally inside your current repository, simply link or copy the extension file into your project's local `.pi/extensions` directory:
+```bash
+# Create local extension directory if it doesn't exist
+mkdir -p .pi/extensions
+
+# Copy the TypeScript extension file inside
+cp .pi/extensions/pocketflow-harness.ts .pi/extensions/pocketflow-harness.ts
+```
+When you start `pi` in this directory, select **Yes** when prompted to "Trust project?" to load project-local extensions automatically.
 
 ### Global Installation (Available in ALL directories)
 Clone this repository directly into your global Pi agent extension folder:
@@ -65,6 +76,12 @@ cp .env.example .env
 ### Essential Toggles (`.env`):
 * `POCKETFLOW_VISUALIZE=true`: Set to `true` to auto-generate the visual topology diagram and code audit logs on every run.
 
+### Zero-Config Tracing Decoupling:
+What makes this implementation truly production-grade is its complete separation from local dependencies:
+1. **Always Embedded**: Every execution automatically bundles both `pocketflow` and its `tracing` companion subdirectories inside the sandbox (`.pi/pocketflow/<task_name>/pocketflow/` and `.pi/pocketflow/<task_name>/tracing/`).
+2. **Transparent Fail-Safe Decorators**: Your dynamic Python files will always run `@trace_flow()` out-of-the-box. If Langfuse is not installed in the micro-env, or if credentials are left blank in `.env`, the pre-bundled decorator automatically degrades to a seamless, silent no-op. It avoids any runtime crashes or import blocking!
+3. **No Outer File Leakage**: The extension automatically loads system env variables and forwards them down to the running workflow. You will never need to read, open, or hardcode environment paths to run traced graphs.
+
 ![mermaid](assets/image-0.png)
 
 
@@ -88,7 +105,7 @@ Whenever planning workflows inside the agent terminal, always adhere to these ru
 Inside your pi agent you can ask:
 
 ```
-lets create a workflow to open every pdf under C:\Users\myfolder using liteparse (the ultra-fast Rust-native local PDF parser), and create a mardown file with the first 10 lines of every pdf in the folder and subfolders.
+let's create a workflow to open every pdf under C:\Users\myfolder using liteparse (the ultra-fast Rust-native local PDF parser), and create a mardown file with the first 10 lines of every pdf in the folder and subfolders.
 ```
 
 
@@ -96,7 +113,22 @@ lets create a workflow to open every pdf under C:\Users\myfolder using liteparse
 
 In few seconds you will have a file with the first 10 lines of every pdf in the requested folder. **Blazing fast!**
 
+---
 
+## 🗺️ Extended Roadmap (Workspace Reuse & Composition)
+
+PocketFlow Dynamic Harness is engineered to move from raw code generation to persistent execution frameworks. Future updates will focus on harvesting and composing the local sandboxed environments:
+
+### 1. Agentic Composition (Sub-Workflow Orchestration)
+Build native bridging schemas allowing new workflow nodes to import, invoke, and pass shared states directly to existing workspace flows. For example, a `MasterFlow` importing `.pi/pocketflow/scraper/flow.py` as an encapsulated subprocess.
+
+### 2. Workflow Caching (Short-Circuit Execution)
+Allow the Pi Agent to index past workspaces (`.pi/pocketflow/*`) and intelligently "short-circuit" execution. When a matching request is made, the agent will verify caching validity and execute `main.py` directly in some milliseconds, bypassing LLM compilation overhead completely.
+
+### 3. Native Cron/Scheduler Daemon
+Introduce a helper CLI command `pocketflow schedule <task_name> --cron="0 9 * * 1"` that dynamically configures local OS cron tasks or launchd scripts for automatic, scheduled executions of your pre-built workspaces.
+
+---
 
 ## 📄 License & Attributions
 

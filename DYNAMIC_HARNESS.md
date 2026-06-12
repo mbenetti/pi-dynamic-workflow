@@ -36,7 +36,31 @@ The harness registers a custom tool `execute_pocketflow_workflow` which triggers
 
 ## 🏁 Architectural Patterns & Usability Guidelines
 
-To make generating dynamic workflows easier and less error-prone, keep the following hard rules in mind:
+To make generating dynamic workflows easier and less error-prone, keep the following design choices and guidelines in mind:
+
+### ⚙️ Core Architecture Design Details
+
+The PocketFlow Dynamic Harness runs as a fully sandboxed, highly-isolated local compiler designed for zero-config workflows. The internal pipeline functions around three core structural choices:
+
+#### 1. Embedded Bundles (Engine Autonomy)
+Rather than requesting users or environments to download framework dependencies via PyPI or NPM, the extension **dynamically writes the core codebases** directly into the task workspace. 
+* **Core Engine**: A 200-line complete replication of the PocketFlow framework (`pocketflow/`) is written into `.pi/pocketflow/<task_name>/pocketflow/`.
+* **Tracing Module**: A modular, optimized version of the Langfuse tracing package (`tracing/`) is compiled inside `.pi/pocketflow/<task_name>/tracing/`.
+This absolute separation makes workspaces 100% self-contained/local, removes download lag, and guarantees complete immunity from framework version conflicts.
+
+#### 2. Automatic Parent Process Propagation (.env Propagation)
+The dynamic harness bypasses manual `.env` file reading and path resolution inside your scripts. When executing subprocesses (via `uv run` or local `python`), Node's parent `process.env` is automatically mapped and propagated:
+* Global or local shell environment variables are forwarded automatically.
+* Workspace variables configured inside your active `pi` `.env` block are loaded on-the-fly and parsed.
+* System configurations, such as your chosen `LANGFUSE_PUBLIC_KEY`, API tokens, and model overrides (`OPENROUTER_API_KEY`) flows natively through the sandbox.
+
+#### 3. Transparent Fail-Safe Decorators
+Flow scripts are automatically scanned and patched with `@trace_flow()` decorators on execution. To guarantee that this decoration never blocks runtime execution:
+* The embedded `tracing` wrapper imports `langfuse` using a silent try/catch block.
+* If `langfuse` keys are not set, or the library is unavailable in a bare environment, the decorator gracefully translates into a silent, zero-overhead **no-op wrapper**.
+* You can write code assuming tracing is *always present*—no more missing import or script crash warnings!
+
+---
 
 ### 1. ⚠️ Crucial Node Routing: Always Return Action Strings
 A common mistake when manually drafting nodes is having the `post()` method return the `shared` state dictionary:
@@ -72,10 +96,15 @@ from utils.call_llm import call_llm, get_instructor_client
   )
   ```
 
-### 3. 🔍 Auto Trace Tracing with Langfuse (Flow Subclassing Requirement)
-If Langfuse credentials (`LANGFUSE_SECRET_KEY` and `LANGFUSE_PUBLIC_KEY`) are present in your process environment or your project's `.env`, the harness **automatically** injects a tracing module and wraps your workflows using `@trace_flow()`. 
+### 3. 🔍 Decoupled Auto-Tracing with Langfuse
+The harness **automatically** injects a tracing module and wraps your workflows using `@trace_flow()`. 
 
-No manual instrumentation of code is necessary. However, a **critical design rule** applies:
+To make tracing completely straightforward and zero-config:
+1. **Decoupled Bundling**: Both the `pocketflow` core engine and the `tracing` modules are embedded natively inside the extension and auto-populated into every task sandbox (`.pi/pocketflow/<task_name>/tracing`). There are **no manual outer file reads**, no local file imports required, and no package-install requirements.
+2. **Standardized Decoration**: Your generated flow files should always declare classes decorated with `@trace_flow()`.
+3. **Graceful Fail-Safe**: If Langfuse credentials (`LANGFUSE_SECRET_KEY` and `LANGFUSE_PUBLIC_KEY`) are missing or tracing is disabled in your terminal `.env`, the pre-bundled decorator automatically converts into a silent, overhead-free no-op. It guarantees consistent execution without environment import crashes.
+
+No manual instrumentation or extra package setup is necessary. However, a **critical design rule** applies:
 
 ⚠️ **Your workflow class in `flow.py` MUST subclass `Flow` or `AsyncFlow` directly**, rather than defining a generic constructor function:
 

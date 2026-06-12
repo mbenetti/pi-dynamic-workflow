@@ -44,6 +44,7 @@ export default function (pi: ExtensionAPI) {
       "The generated nodes should import from 'utils.call_llm' to call the LLM or get the instructor client.",
       "Ensure all nodes are connected sequence-wise (e.g., node_a >> node_b >> node_c) and return a Flow wrapping the start node using start=node_a.",
       "Always define Pydantic schemas for structured nodes to guarantee clean data contracts between nodes.",
+      "Decoupled Langfuse Tracing: PocketFlow core engine and Langfuse tracing modules are pre-bundled natively inside the harness! Always write flow classes decorated with @trace_flow() without installing additional libraries or packages manually. You don't need any local files of 'pocketflow-tracing'. Tracing will quietly initialize and execute without errors even if credentials or tracing are disabled in the host environment.",
     ],
     parameters: Type.Object({
       task_name: Type.String({
@@ -161,7 +162,7 @@ def build_mermaid(start):
         if isinstance(node, Flow):
             node_start = getattr(node, "start_node", None) or getattr(node, "_start_node", None)
             node_start and parent and link(parent, get_id(node_start))
-            lines.append(f"\\n    subgraph sub_flow_{get_id(node)}[{type(node).__name__}]")
+            lines.append(f"\\n    subgraph subgraph_flow_{get_id(node)}[{type(node).__name__}]")
             node_start and walk(node_start)
             for nxt in node.successors.values():
                 node_start and walk(nxt, get_id(node_start)) or (parent and link(parent, get_id(nxt))) or walk(nxt)
@@ -174,31 +175,402 @@ def build_mermaid(start):
     return "\\n".join(lines)
 `;
 
+        // TRACING PACKAGE SOURCE CODE EMBEDDED NATIVELY FOR THE SANDBOX
+        const tracingInitSource = `"""
+PocketFlow Tracing Module
+"""
+from .config import TracingConfig
+from .core import LangfuseTracer
+from .decorator import trace_flow
+
+__all__ = ["trace_flow", "TracingConfig", "LangfuseTracer"]
+`;
+
+        const tracingConfigSource = `import os
+from dataclasses import dataclass
+from typing import Optional
+
+try:
+    from dotenv import load_dotenv
+    dotenv_available = True
+except ImportError:
+    dotenv_available = False
+
+@dataclass
+class TracingConfig:
+    langfuse_secret_key: Optional[str] = None
+    langfuse_public_key: Optional[str] = None
+    langfuse_host: Optional[str] = None
+    debug: bool = False
+    trace_inputs: bool = True
+    trace_outputs: bool = True
+    trace_prep: bool = True
+    trace_exec: bool = True
+    trace_post: bool = True
+    trace_errors: bool = True
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
+    
+    @classmethod
+    def from_env(cls, env_file: Optional[str] = None) -> "TracingConfig":
+        if dotenv_available:
+            load_dotenv()
+            
+        return cls(
+            langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+            langfuse_public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+            langfuse_host=os.getenv("LANGFUSE_HOST") or os.getenv("LANGFUSE_BASE_URL") or "https://cloud.langfuse.com",
+            debug=os.getenv("POCKETFLOW_TRACING_DEBUG", "false").lower() == "true",
+            trace_inputs=os.getenv("POCKETFLOW_TRACE_INPUTS", "true").lower() == "true",
+            trace_outputs=os.getenv("POCKETFLOW_TRACE_OUTPUTS", "true").lower() == "true",
+            trace_prep=os.getenv("POCKETFLOW_TRACE_PREP", "true").lower() == "true",
+            trace_exec=os.getenv("POCKETFLOW_TRACE_EXEC", "true").lower() == "true",
+            trace_post=os.getenv("POCKETFLOW_TRACE_POST", "true").lower() == "true",
+            trace_errors=os.getenv("POCKETFLOW_TRACE_ERRORS", "true").lower() == "true",
+            session_id=os.getenv("POCKETFLOW_SESSION_ID") or os.getenv("LANGFUSE_SESSION_ID"),
+            user_id=os.getenv("POCKETFLOW_USER_ID") or os.getenv("LANGFUSE_USER_ID")
+        )
+        
+    def validate(self) -> bool:
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
+`;
+
+        const tracingCoreSource = `import json
+import uuid
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+try:
+    from langfuse import Langfuse
+    LANGFUSE_AVAILABLE = True
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+
+from .config import TracingConfig
+
+class LangfuseTracer:
+    def __init__(self, config: TracingConfig):
+        self.config = config
+        self.client = None
+        self.current_trace = None
+        self.spans = {}
+        
+        if LANGFUSE_AVAILABLE and config.validate():
+            try:
+                kwargs = {}
+                if config.langfuse_secret_key:
+                    kwargs["secret_key"] = config.langfuse_secret_key
+                if config.langfuse_public_key:
+                    kwargs["public_key"] = config.langfuse_public_key
+                if config.langfuse_host:
+                    kwargs["host"] = config.langfuse_host
+                self.client = Langfuse(**kwargs)
+            except Exception as e:
+                pass
+
+    def start_trace(self, flow_name: str, input_data: Dict[str, Any]) -> Optional[str]:
+        if not self.client:
+            return None
+        try:
+            self.current_trace = self.client.trace(
+                name=flow_name,
+                input=self._serialize_data(input_data),
+                metadata={
+                    "framework": "PocketFlow",
+                    "trace_type": "flow_execution",
+                    "timestamp": datetime.now().isoformat(),
+                },
+                session_id=self.config.session_id,
+                user_id=self.config.user_id,
+            )
+            return self.current_trace.id
+        except Exception:
+            return None
+
+    def end_trace(self, output_data: Dict[str, Any], status: str = "success") -> None:
+        if not self.current_trace:
+            return
+        try:
+            self.current_trace.update(
+                output=self._serialize_data(output_data),
+                metadata={
+                    "status": status,
+                    "end_timestamp": datetime.now().isoformat(),
+                },
+            )
+        except Exception:
+            pass
+        finally:
+            self.current_trace = None
+            self.spans.clear()
+
+    def start_node_span(self, node_name: str, node_id: str, phase: str) -> Optional[str]:
+        if not self.current_trace:
+            return None
+        try:
+            span_id = f"{node_id}_{phase}"
+            span = self.current_trace.span(
+                name=f"{node_name}.{phase}",
+                metadata={
+                    "node_type": node_name,
+                    "node_id": node_id,
+                    "phase": phase,
+                    "start_timestamp": datetime.now().isoformat(),
+                },
+            )
+            self.spans[span_id] = span
+            return span_id
+        except Exception:
+            return None
+
+    def end_node_span(self, span_id: str, input_data: Any = None, output_data: Any = None, error: Exception = None) -> None:
+        if span_id not in self.spans:
+            return
+        try:
+            span = self.spans[span_id]
+            update_data = {}
+            if input_data is not None and self.config.trace_inputs:
+                update_data["input"] = self._serialize_data(input_data)
+            if output_data is not None and self.config.trace_outputs:
+                update_data["output"] = self._serialize_data(output_data)
+                
+            if error and self.config.trace_errors:
+                update_data.update({
+                    "level": "ERROR",
+                    "status_message": str(error),
+                    "metadata": {
+                        "error_type": type(error).__name__,
+                        "error_message": str(error),
+                        "end_timestamp": datetime.now().isoformat(),
+                    }
+                })
+            else:
+                update_data.update({
+                    "level": "DEFAULT",
+                    "metadata": {"end_timestamp": datetime.now().isoformat()},
+                })
+            span.update(**update_data)
+            span.end()
+        except Exception:
+            pass
+        finally:
+            if span_id in self.spans:
+                del self.spans[span_id]
+
+    def _serialize_data(self, data: Any) -> Any:
+        try:
+            if hasattr(data, "__dict__"):
+                return {"_type": type(data).__name__, "_data": str(data)}
+            elif isinstance(data, (dict, list, str, int, float, bool, type(None))):
+                return data
+            return {"_type": type(data).__name__, "_data": str(data)}
+        except Exception:
+            return {"_type": "unknown", "_data": "<serialization_failed>"}
+
+    def flush(self) -> None:
+        if self.client:
+            try:
+                self.client.flush()
+            except Exception:
+                pass
+`;
+
+        const tracingDecoratorSource = `import functools
+import inspect
+import uuid
+from typing import Optional
+from .config import TracingConfig
+from .core import LangfuseTracer
+
+def trace_flow(
+    config: Optional[TracingConfig] = None,
+    flow_name: Optional[str] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None
+):
+    def decorator(flow_class_or_func):
+        if inspect.isclass(flow_class_or_func):
+            return _trace_flow_class(flow_class_or_func, config, flow_name, session_id, user_id)
+        return _trace_flow_function(flow_class_or_func, config, flow_name, session_id, user_id)
+    return decorator
+
+def _trace_flow_class(flow_class, config, flow_name, session_id, user_id):
+    if config is None:
+        config = TracingConfig.from_env()
+    if session_id:
+        config.session_id = session_id
+    if user_id:
+        config.user_id = user_id
+    if flow_name is None:
+        flow_name = flow_class.__name__
+        
+    original_init = flow_class.__init__
+    original_run = getattr(flow_class, 'run', None)
+    original_run_async = getattr(flow_class, 'run_async', None)
+    
+    def traced_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self._tracer = LangfuseTracer(config)
+        self._flow_name = flow_name
+        self._trace_id = None
+        self._patch_nodes()
+        
+    def traced_run(self, shared):
+        if not hasattr(self, '_tracer'):
+            return original_run(self, shared) if original_run else None
+        self._trace_id = self._tracer.start_trace(self._flow_name, shared)
+        try:
+            result = original_run(self, shared) if original_run else None
+            self._tracer.end_trace(shared, "success")
+            return result
+        except Exception as e:
+            self._tracer.end_trace(shared, "error")
+            raise
+        finally:
+            self._tracer.flush()
+            
+    async def traced_run_async(self, shared):
+        if not hasattr(self, '_tracer'):
+            return await original_run_async(self, shared) if original_run_async else None
+        self._trace_id = self._tracer.start_trace(self._flow_name, shared)
+        try:
+            result = await original_run_async(self, shared) if original_run_async else None
+            self._tracer.end_trace(shared, "success")
+            return result
+        except Exception as e:
+            self._tracer.end_trace(shared, "error")
+            raise
+        finally:
+            self._tracer.flush()
+            
+    def patch_nodes(self):
+        start_nd = getattr(self, 'start_node', None) or getattr(self, '_start_node', None)
+        if not start_nd:
+            return
+        visited = set()
+        nodes_to_patch = [start_nd]
+        while nodes_to_patch:
+            node = nodes_to_patch.pop(0)
+            if id(node) in visited:
+                continue
+            visited.add(id(node))
+            self._patch_node(node)
+            if hasattr(node, 'successors'):
+                for successor in node.successors.values():
+                    if successor and id(successor) not in visited:
+                        nodes_to_patch.append(successor)
+                        
+    def patch_node(self, node):
+        if hasattr(node, '_pocketflow_traced'):
+            return
+        node_id = str(uuid.uuid4())
+        node_name = type(node).__name__
+        original_prep = getattr(node, 'prep', None)
+        original_exec = getattr(node, 'exec', None)
+        original_post = getattr(node, 'post', None)
+        original_prep_async = getattr(node, 'prep_async', None)
+        original_exec_async = getattr(node, 'exec_async', None)
+        original_post_async = getattr(node, 'post_async', None)
+        
+        if original_prep:
+            node.prep = self._create_traced_method(original_prep, node_id, node_name, 'prep')
+        if original_exec:
+            node.exec = self._create_traced_method(original_exec, node_id, node_name, 'exec')
+        if original_post:
+            node.post = self._create_traced_method(original_post, node_id, node_name, 'post')
+        if original_prep_async:
+            node.prep_async = self._create_traced_async_method(original_prep_async, node_id, node_name, 'prep')
+        if original_exec_async:
+            node.exec_async = self._create_traced_async_method(original_exec_async, node_id, node_name, 'exec')
+        if original_post_async:
+            node.post_async = self._create_traced_async_method(original_post_async, node_id, node_name, 'post')
+            
+        node._pocketflow_traced = True
+        
+    def create_traced_method(self, original_method, node_id, node_name, phase):
+        @functools.wraps(original_method)
+        def traced_method(*args, **kwargs):
+            span_id = self._tracer.start_node_span(node_name, node_id, phase)
+            try:
+                result = original_method(*args, **kwargs)
+                self._tracer.end_node_span(span_id, input_data=args, output_data=result)
+                return result
+            except Exception as e:
+                self._tracer.end_node_span(span_id, input_data=args, error=e)
+                raise
+        return traced_method
+        
+    def create_traced_async_method(self, original_method, node_id, node_name, phase):
+        @functools.wraps(original_method)
+        async def traced_async_method(*args, **kwargs):
+            span_id = self._tracer.start_node_span(node_name, node_id, phase)
+            try:
+                result = await original_method(*args, **kwargs)
+                self._tracer.end_node_span(span_id, input_data=args, output_data=result)
+                return result
+            except Exception as e:
+                self._tracer.end_node_span(span_id, input_data=args, error=e)
+                raise
+        return traced_async_method
+        
+    flow_class.__init__ = traced_init
+    flow_class._patch_nodes = patch_nodes
+    flow_class._patch_node = patch_node
+    flow_class._create_traced_method = create_traced_method
+    flow_class._create_traced_async_method = create_traced_async_method
+    
+    if original_run:
+        flow_class.run = traced_run
+    if original_run_async:
+        flow_class.run_async = traced_run_async
+        
+    return flow_class
+
+def _trace_flow_function(flow_func, config, flow_name, session_id, user_id):
+    if config is None:
+        config = TracingConfig.from_env()
+    if session_id:
+        config.session_id = session_id
+    if user_id:
+        config.user_id = user_id
+    if flow_name is None:
+        flow_name = flow_func.__name__
+        
+    tracer = LangfuseTracer(config)
+    
+    @functools.wraps(flow_func)
+    def traced_flow_func(*args, **kwargs):
+        shared = args[0] if args else {}
+        trace_id = tracer.start_trace(flow_name, shared)
+        try:
+            result = flow_func(*args, **kwargs)
+            tracer.end_trace(shared, "success")
+            return result
+        except Exception as e:
+            tracer.end_trace(shared, "error")
+            raise
+        finally:
+            tracer.flush()
+    return traced_flow_func
+`;
+
         // COPY VIZ METADATA GENERATOR SCRIPT INTO TASKDIR FOR DIAGRAM GEN
         let finalFlowCode = params.flow_code;
 
-        // Step C: If Langfuse configured, inject automated tracing into flow.py
-        if (hasLangfuse) {
-          // Copy target tracing directory to our temporary execute directory
-          const srcTracingDir = resolve(
-            ctx.cwd,
-            "PocketFlow/cookbook/pocketflow-tracing/tracing",
-          ).replace(/[\\/]/g, "/");
-          const destTracingDir = resolve(taskDir, "tracing").replace(/[\\/]/g, "/");
-          // Use a cross-platform copying method or standard Windows command if on win32
-          const isWin = process.platform === "win32";
-          const cpCmd = isWin 
-            ? `xcopy /E /I /Y "${srcTracingDir.replace(/\//g, "\\")}" "${destTracingDir.replace(/\//g, "\\")}"`
-            : `cp -r "${srcTracingDir}" "${destTracingDir}"`;
-          await execAsync(cpCmd);
+        // Auto-inject our pre-bundled tracing structure into custom flows automatically regardless of active environment keys
+        const destTracingDir = resolve(taskDir, "tracing").replace(/[\\/]/g, "/");
+        await mkdir(destTracingDir, { recursive: true });
+        await writeFile(resolve(destTracingDir, "__init__.py"), tracingInitSource, "utf8");
+        await writeFile(resolve(destTracingDir, "config.py"), tracingConfigSource, "utf8");
+        await writeFile(resolve(destTracingDir, "core.py"), tracingCoreSource, "utf8");
+        await writeFile(resolve(destTracingDir, "decorator.py"), tracingDecoratorSource, "utf8");
 
-          // Inject the trace_flow import and decorator into flow.py
-          finalFlowCode = "from tracing import trace_flow\n" + finalFlowCode;
-          finalFlowCode = finalFlowCode.replace(
-            /class\s+(\w+Flow)\((Flow|BatchFlow|AsyncFlow|AsyncBatchFlow|AsyncParallelBatchFlow)\):/g,
-            "@trace_flow()\nclass $1($2):",
-          );
-        }
+        // Force wrap tracing on all generated flow classes automatically!
+        finalFlowCode = "from tracing import trace_flow\n" + finalFlowCode;
+        finalFlowCode = finalFlowCode.replace(
+          /class\s+(\w+Flow)\((Flow|BatchFlow|AsyncFlow|AsyncBatchFlow|AsyncParallelBatchFlow)\):/g,
+          "@trace_flow()\nclass $1($2):",
+        );
 
         // Add Mermaid builder helper to the flow module for diagnostic introspection
         finalFlowCode = finalFlowCode + "\n" + buildMermaidCode;
@@ -357,10 +729,10 @@ def call_llm(prompt):
           "python-dotenv>=1.0.0",
           ...params.requirements,
         ];
-        if (hasLangfuse) {
-          allRequirements.push("langfuse>=2.0.0");
-          allRequirements.push("langfuse<3.0.0");
-        }
+        
+        // Always include langfuse package quietly to support transparent decorator compilation
+        allRequirements.push("langfuse>=2.0.0");
+        allRequirements.push("langfuse<3.0.0");
 
         // Check if main_code contains inline PEP 723 script metadata
         const hasPEPMetadata = /#\s*\/\/\/\s*script/i.test(params.main_code);
@@ -682,16 +1054,6 @@ class AsyncStructuredNode(AsyncNode):
           ],
         });
         ctx.ui.setStatus("pocketflow", "Executing workflow...");
-
-        // Load .env files from multiple possible locations so they are inherited by the subprocess
-        try {
-          const dotenv = require("dotenv");
-          dotenv.config({ path: resolve(ctx.cwd, ".env"), override: true });
-          dotenv.config({ path: resolve(ctx.cwd, "PocketFlow/.env"), override: true });
-          dotenv.config({ path: resolve(__dirname, "../../PocketFlow/.env"), override: true });
-        } catch (e) {
-          // Ignore
-        }
 
         let execCmd = "";
         if (useUv) {
