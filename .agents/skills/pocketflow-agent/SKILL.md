@@ -190,6 +190,24 @@ from flow import ScanCookbookFlow
 ...
 ```
 
+### 6. Local OCR-Free PDF Parsing with `liteparse`
+When processing a large volume of PDFs locally within a Node construct, using `liteparse` (the native in-process Rust PDF compiler) is extremely powerful. Always disable OCR for high-speed pipelines:
+
+```python
+import liteparse
+from pocketflow import Node
+
+class FastParseNode(Node):
+    def exec(self, pdf_path):
+        # 1. Initialize LiteParse targeting only page 1 and disabling OCR for sub-second parse times
+        parser = liteparse.LiteParse(target_pages="1", ocr_enabled=False)
+        result = parser.parse(pdf_path)
+        
+        # 2. Extract lines or text instantly
+        lines = result.text.splitlines()[:10]
+        return lines
+```
+
 ---
 
 ## ⚠️ Common Errors and Pitfalls to Avoid
