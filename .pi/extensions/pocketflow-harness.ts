@@ -45,6 +45,7 @@ export default function (pi: ExtensionAPI) {
       "Ensure all nodes are connected sequence-wise (e.g., node_a >> node_b >> node_c) and return a Flow wrapping the start node using start=node_a.",
       "Always define Pydantic schemas for structured nodes to guarantee clean data contracts between nodes.",
       "Decoupled Langfuse Tracing: PocketFlow core engine and Langfuse tracing modules are pre-bundled natively inside the harness! Always write flow classes decorated with @trace_flow() without installing additional libraries or packages manually. You don't need any local files of 'pocketflow-tracing'. Tracing will quietly initialize and execute without errors even if credentials or tracing are disabled in the host environment.",
+      "Traceable Provenance: Always populate the 'original_query' and 'thinking_process' fields when calling this tool. This ensures the design intent and architectural decisions are preserved inside the sandbox workspace for future audits.",
     ],
     parameters: Type.Object({
       task_name: Type.String({
@@ -66,6 +67,12 @@ export default function (pi: ExtensionAPI) {
         description:
           "List of pip packages required for this workflow (e.g., ['beautifulsoup4', 'httpx']).",
       }),
+      original_query: Type.Optional(Type.String({
+        description: "The raw user prompt or developer intent behind this workflow execution.",
+      })),
+      thinking_process: Type.Optional(Type.String({
+        description: "The architectural reasoning, node planning, and trade-offs compiled by the agent.",
+      })),
     }),
 
     async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -1167,14 +1174,28 @@ if flow_classes:
             const match = introspectRes.stdout.match(/===START_BLUEPRINT===([\s\S]*?)===END_BLUEPRINT===/);
             if (match && match[1]) {
               const diagramText = match[1].trim();
-              const blueprintMd = `# Workflow Blueprint: ${params.task_name}\n\nGenerated automatically via PocketFlow recursive visualization engine.\n\n## Topology Diagram\n\n\`\`\`mermaid\n${diagramText}\n\`\`\`\n\n## 📄 Workspace Source Code Auditing\n\n### \`nodes.py\`\n\n\`\`\`python\n${params.nodes_code.trim()}\n\`\`\`\n\n### \`flow.py\`\n\n\`\`\`python\n${params.flow_code.trim()}\n\`\`\`\n\n### \`main.py\`\n\n\`\`\`python\n${params.main_code.trim()}\n\`\`\`\n`;
+              
+              // Compile Provenance Metadata elements
+              const queryBlock = params.original_query 
+                ? `## 🎯 Original Prompt / Architectural Intent\n\n> ${params.original_query.trim().replace(/\n/g, "\n> ")}\n\n`
+                : "";
+                
+              const thinkingBlock = params.thinking_process
+                ? `## 🧠 Architectural Thinking Process & Design Choices\n\n${params.thinking_process.trim()}\n\n`
+                : "";
+
+              const blueprintMd = `# Workflow Blueprint: ${params.task_name}\n\nGenerated automatically via PocketFlow recursive visualization engine.\n\n${queryBlock}${thinkingBlock}## Topology Diagram\n\n\`\`\`mermaid\n${diagramText}\n\`\`\`\n\n## 📄 Workspace Source Code Auditing\n\n### \`nodes.py\`\n\n\`\`\`python\n${params.nodes_code.trim()}\n\`\`\`\n\n### \`flow.py\`\n\n\`\`\`python\n${params.flow_code.trim()}\n\`\`\`\n\n### \`main.py\`\n\n\`\`\`python\n${params.main_code.trim()}\n\`\`\`\n`;
         // Write blueprint cleanly to an isolated md file inside the workspace
         // Let's print the blueprint diagram to stderr/stdout so it is visible in the result output, as well as saving!
         console.log("WROTE BLUEPRINT DIAGRAM: ", diagramText);
         // Force the output path to end in blueprint.md, cleanly resolved against ctx.cwd
         const customBlueprintPath = resolve(ctx.cwd, `${params.task_name}_blueprint.md`).replace(/[\\/]/g, "/");
         await writeFile(customBlueprintPath, blueprintMd, "utf8");
-        ctx.ui.notify(`Workspace blueprint saved to ${params.task_name}_blueprint.md`, "info");
+        
+        // Also save a copy directly inside the sandbox taskDir so it propagates permanently !
+        await writeFile(resolve(taskDir, "PROVENANCE.md"), blueprintMd, "utf8");
+        
+        ctx.ui.notify(`Workspace blueprint and provenance saved to ${params.task_name}_blueprint.md`, "info");
             }
           } catch (e: any) {
             // Silence visualizer fallback error quietly
