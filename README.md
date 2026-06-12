@@ -65,10 +65,12 @@ cp .env.example .env
 ### Essential Toggles (`.env`):
 * `POCKETFLOW_VISUALIZE=true`: Set to `true` to auto-generate the visual topology diagram and code audit logs on every run.
 
-![mermaid](image.png)
+![mermaid](assets/image-0.png)
+
+
 * `LANGFUSE_PUBLIC_KEY` & `LANGFUSE_SECRET_KEY`: Providing these keys triggers automated on-the-fly flow telemetries.
 
-![alt text](image-1.png)
+![alt text](assets/image-1.png)
 
 ---
 
@@ -81,7 +83,24 @@ Whenever planning workflows inside the agent terminal, always adhere to these ru
 2. **Always return action keys from `post()`**: Avoid returning the `shared` dictionary itself (which raises `TypeError: unhashable`). Modify `shared` in-place and return a string (e.g., `"default"`, `"success"`, `"retry"`).
 3. **Never `try...except` inside Utilities**: Let raw failures bubble up directly into Node `exec()` cycles so the native PocketFlow `max_retries` can catch, backoff, and heal the states.
 
+## Example request:
+
+Inside your pi agent you can ask:
+
+```
+lets create a workflow to open every pdf under C:\Users\myfolder using liteparse (the ultra-fast Rust-native local PDF parser), and create a mardown file with the first 10 lines of every pdf of the folder.
+```
+
+
+![alt text](assets/image-3.png)
+
+In few seconds you will have a file with the first 10 lines of every pdf in the requested folder. Blazing fast!
+
+
+
 ---
+
+
 
 ## 📄 License & Attributions
 
