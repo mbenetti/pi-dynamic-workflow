@@ -26,7 +26,7 @@ PocketFlow workflows are built on three core abstractions:
 The official [PocketFlow Cookbook Repository](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook) contains dozens of production-ready templates for advanced pipelines (e.g. `RAG`, `Supervisor`, `Majority Vote`, `Multi-Agent Debate`, `Web Crawlers`, and `Self-Healing`). Below are key architectural design templates you can adapt:
 
 ### 1. Structured Output (from [pocketflow-structured-output](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook/pocketflow-structured-output))
-Always use `StructuredNode` or `AsyncStructuredNode` when you need guaranteed structured data from an LLM. This integrates `instructor` directly into the node.
+Always use `StructuredNode` or `AsyncStructuredNode` when you need guaranteed structured data from an LLM (e.g. OpenAI, Anthropic, or OpenRouter). This integrates the `instructor` library directly into the node structure, returning verified Pydantic model objects that are completely clean of conversational fluff words or markdown wrappers.
 
 ```python
 from pocketflow import StructuredNode
@@ -48,6 +48,48 @@ class ReportNode(StructuredNode):
         # exec_res is guaranteed to be a ResearchReport Pydantic instance
         shared["report"] = exec_res.model_dump()
         return "default"
+```
+
+#### 📦 Using Native JSON Schema constraints with Local Ollama
+For local models running on **Ollama** (e.g. `lfm2.5:latest`), you can enforce rigid structured JSON outputs by passing a Pydantic model's JSON Schema schema directly to the Ollama endpoint:
+
+```python
+import json
+import urllib.request
+from pocketflow import Node
+from pydantic import BaseModel
+
+class KeywordExtract(BaseModel):
+    keywords: list[str]
+
+class OllamaStructuredNode(Node):
+    def prep(self, shared):
+        return shared["text"]
+
+    def exec(self, text):
+        prompt = f"Extract keywords from: {text}"
+        
+        # Pull model_json_schema directly from Pydantic
+        schema = KeywordExtract.model_json_schema()
+        
+        payload = {
+            "model": "lfm2.5:latest",
+            "prompt": prompt,
+            "format": schema,  # Constrains model token-generation directly to JSON schema!
+            "stream": False
+        }
+        
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            json_text = payload["response"]
+            # Guaranteed to parse cleanly with no conversational intro or markdown code blocks
+            parsed = json.loads(json_text)
+            return parsed["keywords"]
 ```
 
 ### 2. Parallel Batch Processing (from [pocketflow-parallel-batch](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook/pocketflow-parallel-batch))
