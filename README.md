@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://github.com/The-Pocket/PocketFlow/raw/main/assets/banner.png" alt="PocketFlow Dynamic Harness Logo" width="800" />
+  <img src="./assets/logo.svg" alt="PocketFlow Dynamic Harness Logo" width="800" />
   <h1>🚀 Pi Agent Dynamic PocketFlow Harness</h1>
   <p><b>Generate, execute, visualize, and trace complex multi-step workflows on-the-fly inside Pi.</b></p>
   
