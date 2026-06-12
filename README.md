@@ -92,7 +92,7 @@ lets create a workflow to open every pdf under C:\Users\myfolder using liteparse
 ```
 
 
-![alt text](assets/image-2.png)
+![alt text](assets/Screenshot%202026-06-12%20093714.png)
 
 In few seconds you will have a file with the first 10 lines of every pdf in the requested folder. **Blazing fast!**
 
