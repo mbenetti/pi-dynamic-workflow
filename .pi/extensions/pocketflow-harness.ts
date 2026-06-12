@@ -90,17 +90,32 @@ export default function (pi: ExtensionAPI) {
             .join(require("node:path").delimiter);
         }
 
-        // Load .env files from multiple possible locations so it works from any folder
+        // Load .env files from multiple possible locations manually to avoid dependency issues
         try {
-          const dotenv = require("dotenv");
-          // 1. Try loading from current working directory (.env)
-          dotenv.config({ path: resolve(ctx.cwd, ".env"), override: true });
-          // 2. Try loading from current working directory's PocketFlow folder (PocketFlow/.env)
-          dotenv.config({ path: resolve(ctx.cwd, "PocketFlow/.env"), override: true });
-          // 3. Try loading relative to the extension's directory as a fallback
-          dotenv.config({ path: resolve(__dirname, "../../PocketFlow/.env"), override: true });
+          const fs = require("node:fs");
+          const envPaths = [
+            resolve(ctx.cwd, ".env"),
+            resolve(ctx.cwd, "PocketFlow/.env"),
+            resolve(__dirname, "../../PocketFlow/.env")
+          ];
+          for (const envPath of envPaths) {
+            if (fs.existsSync(envPath)) {
+              const content = fs.readFileSync(envPath, "utf8");
+              for (const line of content.split(/\r?\n/)) {
+                const trimmed = line.trim();
+                if (trimmed && !trimmed.startsWith("#")) {
+                  const parts = trimmed.split("=");
+                  if (parts.length >= 2) {
+                    const key = parts[0].trim();
+                    const val = parts.slice(1).join("=").trim().replace(/^['"]|['"]$/g, "");
+                    process.env[key] = val;
+                  }
+                }
+              }
+            }
+          }
         } catch (e) {
-          // Ignore if dotenv is not installed or files don't exist
+          // Ignore if files don't exist
         }
 
         // Step B: Check for Langfuse environment variables on the host
@@ -682,11 +697,12 @@ class AsyncStructuredNode(AsyncNode):
         if (useUv) {
           // If the generated code specifies PEP 723 script metadata inline, uv will automatically resolve it!
           // We only need to provide --with parameters for requirements not declared inside the script.
+          // Add --no-cache to bypass Windows cache index / access denied lock issues
           if (hasPEPMetadata) {
-            execCmd = `"${uvPath}" run main.py`;
+            execCmd = `"${uvPath}" run --no-cache main.py`;
           } else {
             const withFlags = allRequirements.map(req => `--with "${req}"`).join(" ");
-            execCmd = `"${uvPath}" run ${withFlags} main.py`;
+            execCmd = `"${uvPath}" run --no-cache ${withFlags} main.py`;
           }
         } else {
           const isWin = process.platform === "win32";
