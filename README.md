@@ -46,7 +46,7 @@ mkdir -p ~/.pi/agent/extensions
 git clone https://github.com/mbenetti/pi-dynamic-workflow.git ~/.pi/agent/extensions/pi-dynamic-workflow
 ```
 
-To install directly using the Pi CLI Package Installer:
+To install directly using the Pi CLI Package Installer (which automatically registers both the **Execution Harness Extension** and the **`pocketflow-agent` Agent Skill**):
 ```bash
 pi install git:github.com/mbenetti/pi-dynamic-workflow
 ```

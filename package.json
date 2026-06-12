@@ -1,0 +1,14 @@
+{
+  "name": "pi-dynamic-workflow",
+  "version": "1.0.0",
+  "description": "Dynamic on-the-fly execution, tracing, and visualization of PocketFlow workflows inside Pi agent.",
+  "dependencies": {},
+  "pi": {
+    "extensions": [
+      "./.pi/extensions/pocketflow-harness.ts"
+    ],
+    "skills": [
+      "./.agents/skills/pocketflow-agent"
+    ]
+  }
+}
