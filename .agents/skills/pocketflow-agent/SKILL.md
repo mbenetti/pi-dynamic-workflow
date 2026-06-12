@@ -71,8 +71,12 @@ class ParallelScrapeNode(AsyncParallelBatchNode):
         return "default"
 ```
 
-### 3. Self-Healing & Retries (from `pocketflow-self-healing-mermaid`)
+### 3. Self-Healing, Retries & Fallbacks (with Caching & Failure Isolation)
 Nodes have built-in retry and fallback mechanisms. Configure `max_retries` and `wait` on the node class, and override `exec_fallback` if you need custom self-healing.
+
+**Critical Architectural Rules for Isolation:**
+* **No `try...except` inside Utilities**: Avoid intercepting or eating errors within your utility methods helpers. Let raw issues propagate to your node's `exec()` phase so PocketFlow can manage retries cleanly.
+* **Smart Retry Caching**: In-memory caching can clash with retries by returning the same error. To solve this, pass `self.cur_retry == 0` to your functions to only serve cached results on initial runs, reverting to fresh queries during retries:
 
 ```python
 from pocketflow import Node
@@ -83,7 +87,8 @@ class ResilientScrapeNode(Node):
         super().__init__(max_retries=3, wait=2)
 
     def exec(self, url):
-        return fetch_url_with_potential_failure(url)
+        # Fetch fresh data only if retrying, otherwise leverage cache (if available)
+        return fetch_url_with_potential_failure(url, use_cache=(self.cur_retry == 0))
 
     def exec_fallback(self, prep_res, exc):
         # Called when all retries fail
