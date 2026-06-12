@@ -105,7 +105,7 @@ Whenever planning workflows inside the agent terminal, always adhere to these ru
 Inside your pi agent you can ask:
 
 ```
-lets create a workflow to open every pdf under C:\Users\myfolder using liteparse (the ultra-fast Rust-native local PDF parser), and create a mardown file with the first 10 lines of every pdf in the folder and subfolders.
+let's create a workflow to open every pdf under C:\Users\myfolder using liteparse (the ultra-fast Rust-native local PDF parser), and create a mardown file with the first 10 lines of every pdf in the folder and subfolders.
 ```
 
 
@@ -113,7 +113,22 @@ lets create a workflow to open every pdf under C:\Users\myfolder using liteparse
 
 In few seconds you will have a file with the first 10 lines of every pdf in the requested folder. **Blazing fast!**
 
+---
 
+## 🗺️ Extended Roadmap (Workspace Reuse & Composition)
+
+PocketFlow Dynamic Harness is engineered to move from raw code generation to persistent execution frameworks. Future updates will focus on harvesting and composing the local sandboxed environments:
+
+### 1. Agentic Composition (Sub-Workflow Orchestration)
+Build native bridging schemas allowing new workflow nodes to import, invoke, and pass shared states directly to existing workspace flows. For example, a `MasterFlow` importing `.pi/pocketflow/scraper/flow.py` as an encapsulated subprocess.
+
+### 2. Workflow Caching (Short-Circuit Execution)
+Allow the Pi Agent to index past workspaces (`.pi/pocketflow/*`) and intelligently "short-circuit" execution. When a matching request is made, the agent will verify caching validity and execute `main.py` directly in some milliseconds, bypassing LLM compilation overhead completely.
+
+### 3. Native Cron/Scheduler Daemon
+Introduce a helper CLI command `pocketflow schedule <task_name> --cron="0 9 * * 1"` that dynamically configures local OS cron tasks or launchd scripts for automatic, scheduled executions of your pre-built workspaces.
+
+---
 
 ## 📄 License & Attributions
 
