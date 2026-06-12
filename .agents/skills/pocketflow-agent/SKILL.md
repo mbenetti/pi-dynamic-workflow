@@ -170,6 +170,26 @@ class ProcessNode(Node):
          print(f"Result: {shared}")
      ```
 
+### 5. Running Workflows On-The-Fly with `uv` (Astral)
+For instant dependency loading and sandboxed execution without manually creating virtual environments or configuring requirements:
+* Declare any external dependencies using PEP 723 inline script metadata at the top of `main.py` inside the parameters.
+* The harness extension will automatically detect `uv` and run the script inside an isolated sandbox using `uv run main.py`. If you do not provide inline script metadata, the harness dynamically supplies requirements using `--with <deps>` flags.
+* You can also specify target Python version bounds explicitly on-the-fly (`requires-python = ">=3.12"`). `uv` will automatically download and utilize the desired Python version in isolation if needed!
+
+```python
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "beautifulsoup4",
+#     "httpx",
+#     "instructor"
+# ]
+# ///
+
+from flow import ScanCookbookFlow
+...
+```
+
 ---
 
 ## ⚠️ Common Errors and Pitfalls to Avoid
@@ -186,4 +206,7 @@ class ProcessNode(Node):
 * **Incorrect Async Execution**:
   * **Cause**: Running an `AsyncFlow` synchronously with `flow.run(shared)`.
   * **Solution**: Always run async flows with `await flow.run_async(shared)` inside an `asyncio.run()` or async loop.
+* **Leaked or Broken Virtual Environments on Windows**:
+  * **Cause**: Windows terminals inheriting non-functional `VIRTUAL_ENV` pointers.
+  * **Solution**: The dynamic harness now fully manages and cleanses the execution process space env automatically. Whenever feasible, let the harness leverage on-the-fly execution with `uv run` to guarantee sandboxing.
 

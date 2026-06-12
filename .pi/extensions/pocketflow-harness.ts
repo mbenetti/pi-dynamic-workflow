@@ -68,7 +68,7 @@ export default function (pi: ExtensionAPI) {
     }),
 
     async execute(toolCallId, params, signal, onUpdate, ctx) {
-      const taskDir = resolve(ctx.cwd, `.pi/pocketflow/${params.task_name}`);
+      const taskDir = resolve(ctx.cwd, `.pi/pocketflow/${params.task_name}`).replace(/[\\/]/g, "/");
 
       try {
         // Step A: Create temporary directory for the workflow
@@ -79,6 +79,16 @@ export default function (pi: ExtensionAPI) {
         });
         await mkdir(taskDir, { recursive: true });
         await mkdir(resolve(taskDir, "utils"), { recursive: true });
+
+        // Clean process.env to prevent virtualenv contamination from parent shells
+        if (process.env.VIRTUAL_ENV) {
+          delete process.env.VIRTUAL_ENV;
+        }
+        if (process.env.PATH) {
+          process.env.PATH = process.env.PATH.split(require("node:path").delimiter)
+            .filter(p => !p.includes("pocketflow-tracing"))
+            .join(require("node:path").delimiter);
+        }
 
         // Load .env files from multiple possible locations so it works from any folder
         try {
@@ -99,13 +109,21 @@ export default function (pi: ExtensionAPI) {
           process.env.LANGFUSE_PUBLIC_KEY
         );
 
+        // Check if uv is available on the machine or fallback
         let useUv = false;
         let uvPath = "uv";
         try {
-          await execAsync("which uv");
+          const isWin = process.platform === "win32";
+          await execAsync(isWin ? "where uv" : "which uv");
           useUv = true;
         } catch (e) {
-          // Fall back to standard python/pip
+          // Check if "uv" resides globally by trying to execute "uv --version"
+          try {
+            await execAsync("uv --version");
+            useUv = true;
+          } catch (uvErr) {
+            // Keep false
+          }
         }
 
         // COPY VIZ METADATA GENERATOR SCRIPT INTO TASKDIR FOR DIAGRAM GEN
@@ -150,9 +168,14 @@ def build_mermaid(start):
           const srcTracingDir = resolve(
             ctx.cwd,
             "PocketFlow/cookbook/pocketflow-tracing/tracing",
-          );
-          const destTracingDir = resolve(taskDir, "tracing");
-          await execAsync(`cp -r "${srcTracingDir}" "${destTracingDir}"`);
+          ).replace(/[\\/]/g, "/");
+          const destTracingDir = resolve(taskDir, "tracing").replace(/[\\/]/g, "/");
+          // Use a cross-platform copying method or standard Windows command if on win32
+          const isWin = process.platform === "win32";
+          const cpCmd = isWin 
+            ? `xcopy /E /I /Y "${srcTracingDir.replace(/\//g, "\\")}" "${destTracingDir.replace(/\//g, "\\")}"`
+            : `cp -r "${srcTracingDir}" "${destTracingDir}"`;
+          await execAsync(cpCmd);
 
           // Inject the trace_flow import and decorator into flow.py
           finalFlowCode = "from tracing import trace_flow\n" + finalFlowCode;
@@ -297,7 +320,6 @@ def call_llm(prompt):
         )
     else:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-
     response = client.chat.completions.create(
         model="${activeModelId}",
         messages=[{"role": "user", "content": prompt}]
@@ -324,6 +346,9 @@ def call_llm(prompt):
           allRequirements.push("langfuse>=2.0.0");
           allRequirements.push("langfuse<3.0.0");
         }
+
+        // Check if main_code contains inline PEP 723 script metadata
+        const hasPEPMetadata = /#\s*\/\/\/\s*script/i.test(params.main_code);
 
         // DYNAMIC POCKETFLOW CORE ENGINE INJECTION
         // This injects the exact 200-line PocketFlow core directly into the sandbox folder,
@@ -608,16 +633,30 @@ class AsyncStructuredNode(AsyncNode):
             ],
           });
           ctx.ui.setStatus("pocketflow", "Installing dependencies...");
-          const pipExec = process.env.VIRTUAL_ENV
-            ? await execAsync(
-                `test -f "${resolve(process.env.VIRTUAL_ENV, "bin/pip")}"`,
-              )
-                .then(() => resolve(process.env.VIRTUAL_ENV!, "bin/pip"))
-                .catch(() => resolve(process.env.VIRTUAL_ENV!, "bin/pip3"))
-            : "pip";
+          const isWin = process.platform === "win32";
+          const binFolder = isWin ? "Scripts" : "bin";
+          const exeSuffix = isWin ? ".exe" : "";
+          let pipPath = "pip";
+          
+          if (process.env.VIRTUAL_ENV) {
+            const normVirtualEnv = process.env.VIRTUAL_ENV.replace(/[\\/]/g, "/");
+            const possiblePip = resolve(normVirtualEnv, binFolder, `pip${exeSuffix}`).replace(/[\\/]/g, "/");
+            const fs = require("node:fs");
+            try {
+              fs.accessSync(possiblePip);
+              pipPath = possiblePip;
+            } catch (e) {
+              pipPath = "pip";
+            }
+          }
+          const pipExec = pipPath;
 
+          const pipEnv = { ...process.env };
+          if (pipEnv.VIRTUAL_ENV) {
+            delete pipEnv.VIRTUAL_ENV;
+          }
           for (const req of allRequirements) {
-            await execAsync(`"${pipExec}" install "${req}"`);
+            await execAsync(`"${pipExec}" install "${req}"`, { env: pipEnv });
           }
         }
 
@@ -641,30 +680,52 @@ class AsyncStructuredNode(AsyncNode):
 
         let execCmd = "";
         if (useUv) {
-          // run instantly on-the-fly with isolated dependencies
-          const withFlags = allRequirements.map(req => `--with "${req}"`).join(" ");
-          execCmd = `"${uvPath}" run ${withFlags} main.py`;
+          // If the generated code specifies PEP 723 script metadata inline, uv will automatically resolve it!
+          // We only need to provide --with parameters for requirements not declared inside the script.
+          if (hasPEPMetadata) {
+            execCmd = `"${uvPath}" run main.py`;
+          } else {
+            const withFlags = allRequirements.map(req => `--with "${req}"`).join(" ");
+            execCmd = `"${uvPath}" run ${withFlags} main.py`;
+          }
         } else {
-          const pythonExec = process.env.VIRTUAL_ENV
-            ? resolve(process.env.VIRTUAL_ENV, "bin/python")
-            : "python";
+          const isWin = process.platform === "win32";
+          const binFolder = isWin ? "Scripts" : "bin";
+          const exeSuffix = isWin ? ".exe" : "";
+          let pyPath = "python";
+          if (process.env.VIRTUAL_ENV) {
+            const normVirtualEnv = process.env.VIRTUAL_ENV.replace(/[\\/]/g, "/");
+            const possiblePy = resolve(normVirtualEnv, binFolder, `python${exeSuffix}`).replace(/[\\/]/g, "/");
+            const fs = require("node:fs");
+            try {
+              fs.accessSync(possiblePy);
+              pyPath = possiblePy;
+            } catch (e) {
+              pyPath = "python";
+            }
+          }
+          const pythonExec = pyPath;
           execCmd = `"${pythonExec}" main.py`;
+        }
+
+        const customEnv = {
+          ...process.env, // Forward host variables
+          POCKETFLOW_TRACING_DEBUG: process.env.POCKETFLOW_TRACING_DEBUG || "false",
+          LANGFUSE_HOST: process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST || "",
+        };
+        if (customEnv.VIRTUAL_ENV) {
+          delete customEnv.VIRTUAL_ENV;
         }
 
         const { stdout, stderr } = await execAsync(execCmd, {
           cwd: taskDir,
           timeout: 60000, // 1 minute timeout
           maxBuffer: 25 * 1024 * 1024, // 25MB buffer
-          env: {
-            ...process.env, // Forward all host environment variables
-            POCKETFLOW_TRACING_DEBUG: process.env.POCKETFLOW_TRACING_DEBUG || "false", // Use host value if set, fallback to silent
-            LANGFUSE_HOST:
-              process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST || "",
-          },
+          env: customEnv,
         });
 
         // Step G: Dynamic Mermaid blueprint visualization injection if configured
-        const wantVisualize = (process.env.POCKETFLOW_VISUALIZE || "false").toLowerCase() === "true";
+        const wantVisualize = true; // FORCE VISUALIZATION OUTPUT AS REQUESTED BY USER
         if (wantVisualize) {
           try {
             // Write a temporary introspector engine inside our task-dir
@@ -693,18 +754,49 @@ if flow_classes:
             // Append temporary introspector metadata run
             await writeFile(resolve(taskDir, "_introspect_graph.py"), introspectorScript, "utf8");
 
+            const isWin = process.platform === "win32";
+            const binFolder = isWin ? "Scripts" : "bin";
+            const exeSuffix = isWin ? ".exe" : "";
+            let pPath = "python";
+            if (process.env.VIRTUAL_ENV) {
+              const normVirtualEnv = process.env.VIRTUAL_ENV.replace(/[\\/]/g, "/");
+              const possiblePy = resolve(normVirtualEnv, binFolder, `python${exeSuffix}`).replace(/[\\/]/g, "/");
+              const fs = require("node:fs");
+              try {
+                fs.accessSync(possiblePy);
+                pPath = possiblePy;
+              } catch (e) {
+                pPath = "python";
+              }
+            }
+            // Since we are running the introspection script with uv, we need to make sure 
+            // that the subdirectory 'pocketflow' inside taskDir can be loaded properly.
+            // Let's copy it or link it so 'import pocketflow' inside introspect engine works cleanly if using uv!
+            // When using "uv run", it executes within taskDir but may need an empty python project setup or package requirements if it fails due to resolving.
+            // Actually, we can run "uv run python _introspect_graph.py" to utilize the local directory's python packages properly!
             const introspectCmd = useUv 
-              ? `"${uvPath}" run --with "pocketflow" _introspect_graph.py`
-              : `"${process.env.VIRTUAL_ENV ? resolve(process.env.VIRTUAL_ENV, "bin/python") : "python"}" _introspect_graph.py`;
+              ? `"${uvPath}" run python _introspect_graph.py`
+              : `"${pPath}" _introspect_graph.py`;
 
-            const introspectRes = await execAsync(introspectCmd, { cwd: taskDir });
+            const introspectEnv = { ...process.env };
+            if (introspectEnv.VIRTUAL_ENV) {
+              delete introspectEnv.VIRTUAL_ENV;
+            }
+            const introspectRes = await execAsync(introspectCmd, { cwd: taskDir, env: introspectEnv });
+            await writeFile(resolve(taskDir, "_introspect_debug.log"), `STDOUT:\n${introspectRes.stdout}\n\nSTDERR:\n${introspectRes.stderr}`, "utf8");
+            console.log("INTROSPECT OUT:", introspectRes.stdout);
+            console.log("INTROSPECT ERR:", introspectRes.stderr);
             const match = introspectRes.stdout.match(/===START_BLUEPRINT===([\s\S]*?)===END_BLUEPRINT===/);
             if (match && match[1]) {
               const diagramText = match[1].trim();
               const blueprintMd = `# Workflow Blueprint: ${params.task_name}\n\nGenerated automatically via PocketFlow recursive visualization engine.\n\n## Topology Diagram\n\n\`\`\`mermaid\n${diagramText}\n\`\`\`\n\n## 📄 Workspace Source Code Auditing\n\n### \`nodes.py\`\n\n\`\`\`python\n${params.nodes_code.trim()}\n\`\`\`\n\n### \`flow.py\`\n\n\`\`\`python\n${params.flow_code.trim()}\n\`\`\`\n\n### \`main.py\`\n\n\`\`\`python\n${params.main_code.trim()}\n\`\`\`\n`;
-              // Write blueprint cleanly to an isolated md file inside the workspace
-              await writeFile(resolve(ctx.cwd, `${params.task_name}_blueprint.md`), blueprintMd, "utf8");
-              ctx.ui.notify(`Workspace blueprint saved to ${params.task_name}_blueprint.md`, "info");
+        // Write blueprint cleanly to an isolated md file inside the workspace
+        // Let's print the blueprint diagram to stderr/stdout so it is visible in the result output, as well as saving!
+        console.log("WROTE BLUEPRINT DIAGRAM: ", diagramText);
+        // Force the output path to end in blueprint.md, cleanly resolved against ctx.cwd
+        const customBlueprintPath = resolve(ctx.cwd, `${params.task_name}_blueprint.md`).replace(/[\\/]/g, "/");
+        await writeFile(customBlueprintPath, blueprintMd, "utf8");
+        ctx.ui.notify(`Workspace blueprint saved to ${params.task_name}_blueprint.md`, "info");
             }
           } catch (e: any) {
             // Silence visualizer fallback error quietly
