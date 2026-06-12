@@ -23,7 +23,9 @@ PocketFlow workflows are built on three core abstractions:
 
 ## 🌟 Key Cookbook Patterns & Examples
 
-### 1. Structured Output (from `pocketflow-structured-output`)
+The official [PocketFlow Cookbook Repository](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook) contains dozens of production-ready templates for advanced pipelines (e.g. `RAG`, `Supervisor`, `Majority Vote`, `Multi-Agent Debate`, `Web Crawlers`, and `Self-Healing`). Below are key architectural design templates you can adapt:
+
+### 1. Structured Output (from [pocketflow-structured-output](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook/pocketflow-structured-output))
 Always use `StructuredNode` or `AsyncStructuredNode` when you need guaranteed structured data from an LLM. This integrates `instructor` directly into the node.
 
 ```python
@@ -48,7 +50,7 @@ class ReportNode(StructuredNode):
         return "default"
 ```
 
-### 2. Parallel Batch Processing (from `pocketflow-parallel-batch`)
+### 2. Parallel Batch Processing (from [pocketflow-parallel-batch](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook/pocketflow-parallel-batch))
 When you need to process multiple items concurrently (e.g., scraping multiple URLs, analyzing multiple documents), use `AsyncParallelBatchNode` or `AsyncParallelBatchFlow`.
 
 ```python
@@ -71,7 +73,7 @@ class ParallelScrapeNode(AsyncParallelBatchNode):
         return "default"
 ```
 
-### 3. Self-Healing, Retries & Fallbacks (with Caching & Failure Isolation)
+### 3. Self-Healing, Retries & Fallbacks (from [pocketflow-self-healing-mermaid](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook/pocketflow-self-healing-mermaid))
 Nodes have built-in retry and fallback mechanisms. Configure `max_retries` and `wait` on the node class, and override `exec_fallback` if you need custom self-healing.
 
 **Critical Architectural Rules for Isolation:**
