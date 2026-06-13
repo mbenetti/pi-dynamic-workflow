@@ -85,8 +85,8 @@ export default function (pi: ExtensionAPI) {
             { type: "text", text: "📁 Creating workflow directory..." },
           ],
         });
-        await mkdir(taskDir, { recursive: true });
-        await mkdir(resolve(taskDir, "utils"), { recursive: true });
+        await fs.mkdir(taskDir, { recursive: true });
+        await fs.mkdir(resolve(taskDir, "utils"), { recursive: true });
 
         // Clean process.env to prevent virtualenv contamination from parent shells
         if (process.env.VIRTUAL_ENV) {
@@ -567,21 +567,21 @@ def _trace_flow_function(flow_func, config, flow_name, session_id, user_id):
 
         // Auto-inject our pre-bundled tracing structure into custom flows automatically regardless of active environment keys
         const destTracingDir = resolve(taskDir, "tracing").replace(/[\\/]/g, "/");
-        await mkdir(destTracingDir, { recursive: true });
-        await writeFile(resolve(destTracingDir, "__init__.py"), tracingInitSource, "utf8");
-        await writeFile(resolve(destTracingDir, "config.py"), tracingConfigSource, "utf8");
-        await writeFile(resolve(destTracingDir, "core.py"), tracingCoreSource, "utf8");
+        await fs.mkdir(destTracingDir, { recursive: true });
+        await fs.writeFile(resolve(destTracingDir, "__init__.py"), tracingInitSource, "utf8");
+        await fs.writeFile(resolve(destTracingDir, "config.py"), tracingConfigSource, "utf8");
+        await fs.writeFile(resolve(destTracingDir, "core.py"), tracingCoreSource, "utf8");
 
         // Add Mermaid builder helper to the flow module for diagnostic introspection
         finalFlowCode = finalFlowCode + "\n" + buildMermaidCode;
 
-        await writeFile(
+        await fs.writeFile(
           resolve(taskDir, "nodes.py"),
           params.nodes_code,
           "utf8",
         );
-        await writeFile(resolve(taskDir, "flow.py"), finalFlowCode, "utf8");
-        await writeFile(resolve(taskDir, "main.py"), params.main_code, "utf8");
+        await fs.writeFile(resolve(taskDir, "flow.py"), finalFlowCode, "utf8");
+        await fs.writeFile(resolve(taskDir, "main.py"), params.main_code, "utf8");
 
         // Step D: Dynamically generate utils/call_llm.py to match the Pi agent's active model and provider
         onUpdate?.({
@@ -715,8 +715,8 @@ def call_llm(prompt):
 `;
         }
 
-        await writeFile(resolve(taskDir, "utils/__init__.py"), "", "utf8");
-        await writeFile(
+        await fs.writeFile(resolve(taskDir, "utils/__init__.py"), "", "utf8");
+        await fs.writeFile(
           resolve(taskDir, "utils/call_llm.py"),
           utilsCode,
           "utf8",
@@ -1088,8 +1088,8 @@ class AsyncStructuredNode(AsyncNode):
 `;
         
         // Write the local pocketflow module directly into the sandbox folder during workflow init
-        await mkdir(resolve(taskDir, "pocketflow"), { recursive: true });
-        await writeFile(resolve(taskDir, "pocketflow/__init__.py"), pfCoreSource, "utf8");
+        await fs.mkdir(resolve(taskDir, "pocketflow"), { recursive: true });
+        await fs.writeFile(resolve(taskDir, "pocketflow/__init__.py"), pfCoreSource, "utf8");
 
         // Check if uv is available on the machine for instant on-the-fly execution (already detected above)
 
@@ -1222,7 +1222,7 @@ if flow_classes:
     print("===END_BLUEPRINT===")
 `;
             // Append temporary introspector metadata run
-            await writeFile(resolve(taskDir, "_introspect_graph.py"), introspectorScript, "utf8");
+            await fs.writeFile(resolve(taskDir, "_introspect_graph.py"), introspectorScript, "utf8");
 
             const isWin = process.platform === "win32";
             const binFolder = isWin ? "Scripts" : "bin";
@@ -1261,7 +1261,7 @@ if flow_classes:
               delete introspectEnv.VIRTUAL_ENV;
             }
             const introspectRes = await execAsync(introspectCmd, { cwd: taskDir, env: introspectEnv });
-            await writeFile(resolve(taskDir, "_introspect_debug.log"), `STDOUT:\n${introspectRes.stdout}\n\nSTDERR:\n${introspectRes.stderr}`, "utf8");
+            await fs.writeFile(resolve(taskDir, "_introspect_debug.log"), `STDOUT:\n${introspectRes.stdout}\n\nSTDERR:\n${introspectRes.stderr}`, "utf8");
             console.log("INTROSPECT OUT:", introspectRes.stdout);
             console.log("INTROSPECT ERR:", introspectRes.stderr);
             const match = introspectRes.stdout.match(/===START_BLUEPRINT===([\s\S]*?)===END_BLUEPRINT===/);
@@ -1283,10 +1283,10 @@ if flow_classes:
         console.log("WROTE BLUEPRINT DIAGRAM: ", diagramText);
         // Force the output path to end in blueprint.md, cleanly resolved against ctx.cwd
         const customBlueprintPath = resolve(ctx.cwd, `${params.task_name}_blueprint.md`).replace(/[\\/]/g, "/");
-        await writeFile(customBlueprintPath, blueprintMd, "utf8");
+        await fs.writeFile(customBlueprintPath, blueprintMd, "utf8");
         
         // Also save a copy directly inside the sandbox taskDir so it propagates permanently !
-        await writeFile(resolve(taskDir, "PROVENANCE.md"), blueprintMd, "utf8");
+        await fs.writeFile(resolve(taskDir, "PROVENANCE.md"), blueprintMd, "utf8");
         
         ctx.ui.notify(`Workspace blueprint and provenance saved to ${params.task_name}_blueprint.md`, "info");
             }
