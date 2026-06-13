@@ -573,6 +573,14 @@ def _trace_flow_function(flow_func, config, flow_name, session_id, user_id):
         await fs.writeFile(resolve(destTracingDir, "__init__.py"), tracingInitSource, "utf8");
         await fs.writeFile(resolve(destTracingDir, "config.py"), tracingConfigSource, "utf8");
         await fs.writeFile(resolve(destTracingDir, "core.py"), tracingCoreSource, "utf8");
+        await fs.writeFile(resolve(destTracingDir, "decorator.py"), tracingDecoratorSource, "utf8");
+
+        // Force wrap tracing on all generated flow classes automatically!
+        finalFlowCode = "from tracing import trace_flow\n" + finalFlowCode;
+        finalFlowCode = finalFlowCode.replace(
+          /class\s+(\w+Flow)\((Flow|BatchFlow|AsyncFlow|AsyncBatchFlow|AsyncParallelBatchFlow)\):/g,
+          "@trace_flow()\nclass $1($2):",
+        );
 
         // Add Mermaid builder helper to the flow module for diagnostic introspection
         finalFlowCode = finalFlowCode + "\n" + buildMermaidCode;
