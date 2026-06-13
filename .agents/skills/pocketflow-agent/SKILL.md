@@ -23,7 +23,25 @@ PocketFlow workflows are built on three core abstractions:
 
 ## 🌟 Key Cookbook Patterns & Examples
 
-The official [PocketFlow Cookbook Repository](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook) contains dozens of production-ready templates for advanced pipelines (e.g. `RAG`, `Supervisor`, `Majority Vote`, `Multi-Agent Debate`, `Web Crawlers`, and `Self-Healing`). Below are key architectural design templates you can adapt:
+The official [PocketFlow Cookbook Repository](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook) contains dozens of production-ready templates for advanced pipelines (e.g. `RAG`, `Supervisor`, `Majority Vote`, `Multi-Agent Debate`, `Web Crawlers`, and `Self-Healing`).
+
+### 📂 Locally Cached Cookbook Archetypic Blueprints
+Because your current repository workspace has a **fully complete, highly optimized duplicate of the PocketFlow cookbook locally**, you do not need to construct advanced nodes or workflows from scratch when requested! 
+
+If a task matches any of the advanced architectural archetypes below, you should use your `read`, `find`, or `grep` tools to inspect, load, and adapt the fully tested Python scripts located directly inside your active workspace directories:
+
+| Archetype / Use Case | Cookbook Folder Path | Key Components to Audit & Reuse |
+| :--- | :--- | :--- |
+| **Pristine Structured Outputs** | `PocketFlow/cookbook/pocketflow-structured-output` | Uses `instructor` & `pydantic` to coerce models strictly to JSON schema bounds, stripping reasoning fluff. |
+| **Deep Research & Scrapers** | `PocketFlow/cookbook/pocketflow-deep-research` | High-strength sequential queries, downloading links dynamically, local caching, and synthesis. |
+| **Self-Healing Diagram Gen** | `PocketFlow/cookbook/pocketflow-self-healing-mermaid` | Automatically intercepts subprocess compile crashes or schemas and feeds traceback error logs into retries. |
+| **Parallel Batch Processing** | `PocketFlow/cookbook/pocketflow-parallel-batch` | Leverages `AsyncParallelBatchNode` to parse multiple URLs, PDFs, or files concurrently. |
+| **Interactive Human-In-The-Loop** | `PocketFlow/cookbook/pocketflow-cli-hitl` | Temporarily halts flow orchestration to prompt developers over stdin for feedback before continuing. |
+| **MCP Tool Servers** | `PocketFlow/cookbook/pocketflow-mcp` | Interlinks Model Context Protocol tools straight into nodes. |
+| **Multi-Agent Debates** | `PocketFlow/cookbook/pocketflow-debate` | Runs parallel competitive reasoning nodes before evaluating a consensus decision in a Judge node. |
+| **Rag-based Knowledge Graphs** | `PocketFlow/cookbook/pocketflow-agentic-rag` | Connects local vector embeddings and chunks straight into decision trees. |
+
+---
 
 ### 1. Structured Output (from [pocketflow-structured-output](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook/pocketflow-structured-output))
 Always use `StructuredNode` or `AsyncStructuredNode` when you need guaranteed structured data from an LLM (e.g. OpenAI, Anthropic, or OpenRouter). This integrates the `instructor` library directly into the node structure, returning verified Pydantic model objects that are completely clean of conversational fluff words or markdown wrappers.
