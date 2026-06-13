@@ -96,25 +96,18 @@ from utils.call_llm import call_llm, get_instructor_client
   )
   ```
 
-### 3. 🔍 Decoupled Auto-Tracing with Langfuse
-The harness **automatically** injects a tracing module and wraps your workflows using `@trace_flow()`. 
+### 3. 🔍 Decoupled Native Tracing with Langfuse
+The harness **automatically** injects professional Langfuse tracing into your workflows natively.
 
 To make tracing completely straightforward and zero-config:
 1. **Decoupled Bundling**: Both the `pocketflow` core engine and the `tracing` modules are embedded natively inside the extension and auto-populated into every task sandbox (`.pi/pocketflow/<task_name>/tracing`). There are **no manual outer file reads**, no local file imports required, and no package-install requirements.
-2. **Standardized Decoration**: Your generated flow files should always declare classes decorated with `@trace_flow()`.
-3. **Graceful Fail-Safe**: If Langfuse credentials (`LANGFUSE_SECRET_KEY` and `LANGFUSE_PUBLIC_KEY`) are missing or tracing is disabled in your terminal `.env`, the pre-bundled decorator automatically converts into a silent, overhead-free no-op. It guarantees consistent execution without environment import crashes.
+2. **Transparent contextvars-powered Logging**: PocketFlow core classes natively monitor node execution timings, inputs, outputs, exceptions, and overall flow topology. By utilizing Python's thread-safe and async-safe `contextvars` module, logging remains perfectly isolated across concurrent flow threads.
+3. **Graceful Fail-Safe**: If Langfuse credentials (`LANGFUSE_SECRET_KEY` and `LANGFUSE_PUBLIC_KEY`) are missing or tracing is disabled in your terminal `.env`, the pre-bundled tracer automatically converts into a silent, overhead-free no-op. It guarantees consistent execution without environment import crashes.
 
-No manual instrumentation or extra package setup is necessary. However, a **critical design rule** applies:
-
-⚠️ **Your workflow class in `flow.py` MUST subclass `Flow` or `AsyncFlow` directly**, rather than defining a generic constructor function:
+No manual instrumentation, decorating, or extra package setup is necessary. Just instantiate your standard `Flow` or `AsyncFlow` and run it:
 
 ```python
-# ❌ INCORRECT (Harness tracing regex will NOT find this and tracing will fail)
-def create_flow():
-    node_a = MyNode()
-    return Flow(start=node_a)
-
-# ✅ CORRECT (Standard subclassing allows @trace_flow() wrapping!)
+# ✅ CLEAN AND STANDARD (Native contextvars automatically logs all node executions!)
 class MyEpicJourneyFlow(Flow):
     def __init__(self):
         node_a = MyNode()

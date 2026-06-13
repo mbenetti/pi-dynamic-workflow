@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { resolve, dirname } from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
+import { resolve, dirname, delimiter } from "node:path";
+import { promises as fs } from "node:fs";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -93,23 +93,22 @@ export default function (pi: ExtensionAPI) {
           delete process.env.VIRTUAL_ENV;
         }
         if (process.env.PATH) {
-          process.env.PATH = process.env.PATH.split(require("node:path").delimiter)
+          process.env.PATH = process.env.PATH.split(delimiter)
             .filter(p => !p.includes("pocketflow-tracing"))
-            .join(require("node:path").delimiter);
+            .join(delimiter);
         }
 
         // Load .env files from multiple possible locations manually to avoid dependency issues
         try {
-          const fs = require("node:fs");
           const envPaths = [
             resolve(ctx.cwd, ".env"),
             resolve(ctx.cwd, "PocketFlow/.env"),
             resolve(__dirname, "../../PocketFlow/.env")
           ];
           for (const envPath of envPaths) {
-            if (fs.existsSync(envPath)) {
-              const content = fs.readFileSync(envPath, "utf8");
-              for (const line of content.split(/\r?\n/)) {
+            try {
+              const fileContent = await fs.readFile(envPath, "utf8");
+              for (const line of fileContent.split(/\r?\n/)) {
                 const trimmed = line.trim();
                 if (trimmed && !trimmed.startsWith("#")) {
                   const parts = trimmed.split("=");
@@ -120,10 +119,12 @@ export default function (pi: ExtensionAPI) {
                   }
                 }
               }
+            } catch (err) {
+              // file doesn't exist or read error, ignore
             }
           }
         } catch (e) {
-          // Ignore if files don't exist
+          // Ignore
         }
 
         // Step B: Check for Langfuse environment variables on the host
@@ -570,14 +571,6 @@ def _trace_flow_function(flow_func, config, flow_name, session_id, user_id):
         await writeFile(resolve(destTracingDir, "__init__.py"), tracingInitSource, "utf8");
         await writeFile(resolve(destTracingDir, "config.py"), tracingConfigSource, "utf8");
         await writeFile(resolve(destTracingDir, "core.py"), tracingCoreSource, "utf8");
-        await writeFile(resolve(destTracingDir, "decorator.py"), tracingDecoratorSource, "utf8");
-
-        // Force wrap tracing on all generated flow classes automatically!
-        finalFlowCode = "from tracing import trace_flow\n" + finalFlowCode;
-        finalFlowCode = finalFlowCode.replace(
-          /class\s+(\w+Flow)\((Flow|BatchFlow|AsyncFlow|AsyncBatchFlow|AsyncParallelBatchFlow)\):/g,
-          "@trace_flow()\nclass $1($2):",
-        );
 
         // Add Mermaid builder helper to the flow module for diagnostic introspection
         finalFlowCode = finalFlowCode + "\n" + buildMermaidCode;
@@ -691,8 +684,8 @@ def call_llm(prompt):
             ? process.env.OPENROUTER_API_KEY
             : process.env.OPENAI_API_KEY || "";
           const baseUrl = process.env.OPENROUTER_API_KEY
-            ? "from openai import OpenAI\n\ndef get_instructor_client():\n    return instructor.from_openai(OpenAI(base_url='https://openrouter.ai/api/v1', api_key=os.getenv('OPENROUTER_API_KEY')))"
-            : "from openai import OpenAI\n\ndef get_instructor_client():\n    return instructor.from_openai(OpenAI(api_key=os.getenv('OPENAI_API_KEY')))";
+            ? "from openai import OpenAI\\n\\ndef get_instructor_client():\\n    return instructor.from_openai(OpenAI(base_url='https://openrouter.ai/api/v1', api_key=os.getenv('OPENROUTER_API_KEY')))"
+            : "from openai import OpenAI\\n\\ndef get_instructor_client():\\n    return instructor.from_openai(OpenAI(api_key=os.getenv('OPENAI_API_KEY')))";
 
           utilsCode = `import os
 import instructor
@@ -741,6 +734,15 @@ def call_llm(prompt):
         allRequirements.push("langfuse>=2.0.0");
         allRequirements.push("langfuse<3.0.0");
 
+        // Dynamically auto-inject provider-specific SDKs
+        if (activeProvider === "google") {
+          allRequirements.push("google-genai");
+        } else if (activeProvider === "anthropic") {
+          allRequirements.push("anthropic");
+        } else if (activeProvider === "openai" || activeProvider === "openrouter") {
+          allRequirements.push("openai");
+        }
+
         // Check if main_code contains inline PEP 723 script metadata
         const hasPEPMetadata = /#\s*\/\/\/\s*script/i.test(params.main_code);
 
@@ -752,6 +754,12 @@ def call_llm(prompt):
 import copy
 import time
 import warnings
+import uuid
+import contextvars
+from datetime import datetime
+
+# Thread-safe context var to hold the active LangfuseTracer
+_active_tracer = contextvars.ContextVar("_active_tracer", default=None)
 
 class BaseNode:
     def __init__(self):
@@ -779,9 +787,25 @@ class BaseNode:
         return self.exec(prep_res)
 
     def _run(self, shared):
-        p = self.prep(shared)
-        e = self._exec(p)
-        return self.post(shared, p, e)
+        tracer = _active_tracer.get()
+        node_id = getattr(self, "_trace_node_id", None) or str(uuid.uuid4())
+        self._trace_node_id = node_id
+        node_name = type(self).__name__
+        
+        # Safe phase trace wrapping
+        span_id = tracer.start_node_span(node_name, node_id, "exec") if tracer else None
+        p = None
+        try:
+            p = self.prep(shared)
+            e = self._exec(p)
+            res = self.post(shared, p, e)
+            if tracer and span_id:
+                tracer.end_node_span(span_id, input_data=str(p), output_data=str(res))
+            return res
+        except Exception as err:
+            if tracer and span_id:
+                tracer.end_node_span(span_id, input_data=str(p), error=err)
+            raise
 
     def run(self, shared):
         if self.successors:
@@ -853,9 +877,32 @@ class Flow(BaseNode):
         return last_action
 
     def _run(self, shared):
-        p = self.prep(shared)
-        o = self._orch(shared)
-        return self.post(shared, p, o)
+        tracer = None
+        token = None
+        try:
+            from tracing.config import TracingConfig
+            from tracing.core import LangfuseTracer
+            config = TracingConfig.from_env()
+            if config.validate():
+                tracer = LangfuseTracer(config)
+                tracer.start_trace(type(self).__name__, shared)
+                token = _active_tracer.set(tracer)
+        except Exception:
+            pass
+
+        try:
+            p = self.prep(shared)
+            o = self._orch(shared)
+            return self.post(shared, p, o)
+        finally:
+            if tracer:
+                try:
+                    tracer.end_trace(shared, "success")
+                    tracer.flush()
+                except Exception:
+                    pass
+            if token:
+                _active_tracer.reset(token)
 
     def post(self, shared, prep_res, exec_res):
         return exec_res
@@ -896,9 +943,24 @@ class AsyncNode(Node):
         return await self._run_async(shared)
 
     async def _run_async(self, shared):
-        p = await self.prep_async(shared)
-        e = await self._exec(p)
-        return await self.post_async(shared, p, e)
+        tracer = _active_tracer.get()
+        node_id = getattr(self, "_trace_node_id", None) or str(uuid.uuid4())
+        self._trace_node_id = node_id
+        node_name = type(self).__name__
+        
+        span_id = tracer.start_node_span(node_name, node_id, "exec") if tracer else None
+        p = None
+        try:
+            p = await self.prep_async(shared)
+            e = await self._exec(p)
+            res = await self.post_async(shared, p, e)
+            if tracer and span_id:
+                tracer.end_node_span(span_id, input_data=str(p), output_data=str(res))
+            return res
+        except Exception as err:
+            if tracer and span_id:
+                tracer.end_node_span(span_id, input_data=str(p), error=err)
+            raise
 
     def _run(self, shared):
         raise RuntimeError("Use run_async.")
@@ -931,9 +993,32 @@ class AsyncFlow(Flow, AsyncNode):
         return last_action
 
     async def _run_async(self, shared):
-        p = await self.prep_async(shared)
-        o = await self._orch_async(shared)
-        return await self.post_async(shared, p, o)
+        tracer = None
+        token = None
+        try:
+            from tracing.config import TracingConfig
+            from tracing.core import LangfuseTracer
+            config = TracingConfig.from_env()
+            if config.validate():
+                tracer = LangfuseTracer(config)
+                tracer.start_trace(type(self).__name__, shared)
+                token = _active_tracer.set(tracer)
+        except Exception:
+            pass
+
+        try:
+            p = await self.prep_async(shared)
+            o = await self._orch_async(shared)
+            return await self.post_async(shared, p, o)
+        finally:
+            if tracer:
+                try:
+                    tracer.end_trace(shared, "success")
+                    tracer.flush()
+                except Exception:
+                    pass
+            if token:
+                _active_tracer.reset(token)
 
     async def post_async(self, shared, prep_res, exec_res):
         return exec_res
@@ -1159,9 +1244,17 @@ if flow_classes:
             // Let's copy it or link it so 'import pocketflow' inside introspect engine works cleanly if using uv!
             // When using "uv run", it executes within taskDir but may need an empty python project setup or package requirements if it fails due to resolving.
             // Actually, we can run "uv run python _introspect_graph.py" to utilize the local directory's python packages properly!
-            const introspectCmd = useUv 
-              ? `"${uvPath}" run python _introspect_graph.py`
-              : `"${pPath}" _introspect_graph.py`;
+            let introspectCmd = "";
+            if (useUv) {
+              if (hasPEPMetadata) {
+                introspectCmd = `"${uvPath}" run --no-cache _introspect_graph.py`;
+              } else {
+                const withFlags = allRequirements.map(req => `--with "${req}"`).join(" ");
+                introspectCmd = `"${uvPath}" run --no-cache ${withFlags} _introspect_graph.py`;
+              }
+            } else {
+              introspectCmd = `"${pPath}" _introspect_graph.py`;
+            }
 
             const introspectEnv = { ...process.env };
             if (introspectEnv.VIRTUAL_ENV) {
