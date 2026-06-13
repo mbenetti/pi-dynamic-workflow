@@ -10,7 +10,12 @@
 
 ---
 
-The **PocketFlow Dynamic Harness** is a robust project-local or global extension for **[Pi (a terminal-based AI coding assistant harness)](https://github.com/earendil-works/pi)**. It registers a custom tool `execute_pocketflow_workflow` that empowers your Pi Agent to design, generate, execute, and self-heal intricate multi-step Python graphs dynamically using the minimalist **[PocketFlow](https://github.com/The-Pocket/PocketFlow.git)** framework.
+The **PocketFlow Dynamic Harness (`pocketflow-harness.ts`)** is a Pi Extension that provides a **zero-overhead, zero-config local sandbox** for dynamic workflow generation. It streamlines agent-driven development by addressing common challenges in local execution:
+
+1. **Dynamic state extraction**: Automatically detects and syncs with Pi’s active LLM model, provider, and API keys.
+2. **Framework containment**: Injects a lightweight, local Python emulation of the `pocketflow` core and `tracing` modules on the fly, avoiding global dependency conflicts.
+3. **Speed & Package Isolation**: Leverages the native Astral `uv` toolchain for fast execution, with automatic fallback to isolated virtualenv `pip` installs.
+4. **Topology diagnostics**: Uses transparent runtime introspection to generate clear Mermaid blueprint diagrams of the executed workflow.
 
 To ensure pristine code generation and peak usability, **this package natively includes its own Agent Skill (`pocketflow-agent`)**. When installed via the `pi install` CLI, Pi automatically ingests this skill into its context memory, instructing the AI on the exact design rules, subclassing syntax, and self-healing behaviors necessary to construct valid, trace-ready workflows flawlessly without human guidance.
 
