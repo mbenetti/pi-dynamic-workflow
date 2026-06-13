@@ -119,6 +119,8 @@ export default function (pi: ExtensionAPI) {
                   }
                 }
               }
+              // Copy/write the file to the task directory so python-dotenv in the subprocess loads it!
+              await fs.writeFile(resolve(taskDir, ".env"), fileContent, "utf8");
             } catch (err) {
               // file doesn't exist or read error, ignore
             }
@@ -222,7 +224,7 @@ class TracingConfig:
     @classmethod
     def from_env(cls, env_file: Optional[str] = None) -> "TracingConfig":
         if dotenv_available:
-            load_dotenv()
+            load_dotenv(override=True)
             
         return cls(
             langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
@@ -1178,11 +1180,14 @@ class AsyncStructuredNode(AsyncNode):
           execCmd = `"${pythonExec}" main.py`;
         }
 
-        const customEnv = {
-          ...process.env, // Forward host variables
+        const customEnv: Record<string, string> = {
+          ...process.env as Record<string, string>, // Forward host variables
           POCKETFLOW_TRACING_DEBUG: process.env.POCKETFLOW_TRACING_DEBUG || "false",
-          LANGFUSE_HOST: process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST || "",
         };
+        // Avoid setting empty strings as they contaminate and override python load_dotenv behaviour
+        if (process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST) {
+          customEnv.LANGFUSE_HOST = process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST || "";
+        }
         if (customEnv.VIRTUAL_ENV) {
           delete customEnv.VIRTUAL_ENV;
         }
