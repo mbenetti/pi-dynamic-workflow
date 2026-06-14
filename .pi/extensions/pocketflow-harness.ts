@@ -396,6 +396,7 @@ class LangfuseTracer:
         const tracingDecoratorSource = `import functools
 import inspect
 import uuid
+import time
 from typing import Optional
 from .config import TracingConfig
 from .core import LangfuseTracer
@@ -446,7 +447,10 @@ def _trace_flow_class(flow_class, config, flow_name, session_id, user_id):
             raise
         finally:
             self._tracer.flush()
-            
+            if self._tracer.client:
+                # Give background threads a small moment to flush all batched events over the container network before standard exit
+                time.sleep(0.5)
+
     async def traced_run_async(self, shared):
         if not hasattr(self, '_tracer'):
             return await original_run_async(self, shared) if original_run_async else None
@@ -460,6 +464,9 @@ def _trace_flow_class(flow_class, config, flow_name, session_id, user_id):
             raise
         finally:
             self._tracer.flush()
+            if self._tracer.client:
+                # Give background threads a small moment to flush all batched events over the container network before standard exit
+                time.sleep(0.5)
             
     def patch_nodes(self):
         start_nd = getattr(self, 'start_node', None) or getattr(self, '_start_node', None)
