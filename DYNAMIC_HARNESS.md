@@ -99,22 +99,25 @@ from utils.call_llm import call_llm, get_instructor_client
 ### 3. 🔍 Decoupled Native Tracing with Langfuse
 The harness **automatically** injects professional Langfuse tracing into your workflows natively.
 
-To make tracing completely straightforward and zero-config:
+To make tracing completely straightforward, zero-config, and deep:
 1. **Decoupled Bundling**: Both the `pocketflow` core engine and the `tracing` modules are embedded natively inside the extension and auto-populated into every task sandbox (`.pi/pocketflow/<task_name>/tracing`). There are **no manual outer file reads**, no local file imports required, and no package-install requirements.
-2. **Transparent contextvars-powered Logging**: PocketFlow core classes natively monitor node execution timings, inputs, outputs, exceptions, and overall flow topology. By utilizing Python's thread-safe and async-safe `contextvars` module, logging remains perfectly isolated across concurrent flow threads.
+2. **Dual-Level Telemetry (Workflow & Model-Level)**:
+   - **Level A (Workflow & Graph Level)**: Captured automatically by the pre-compiled `@trace_flow()` flow-class decorator injected by the harness. This maps your entire flow execution start/end times and records the exact input, output, execution state, and results for each node phase (`prep`, `exec`, and `post` phases) as nested child spans of the main Flow trace.
+   - **Level B (Model & LLM Level)**: When using OpenAI, Instructor (`get_instructor_client()`), or other supported packages, the underlying client libraries auto-instrument themselves. They submit distinct model-level entries to Langfuse containing prompt text, completions, model names, and detailed token/pricing usages.
+   This dual-layer mapping ensures both your graph logic and and your underlying LLM API usage are recorded with high-fidelity side-by-side!
 3. **Graceful Fail-Safe**: If Langfuse credentials (`LANGFUSE_SECRET_KEY` and `LANGFUSE_PUBLIC_KEY`) are missing or tracing is disabled in your terminal `.env`, the pre-bundled tracer automatically converts into a silent, overhead-free no-op. It guarantees consistent execution without environment import crashes.
 
 No manual instrumentation, decorating, or extra package setup is necessary. Just instantiate your standard `Flow` or `AsyncFlow` and run it:
 
 ```python
-# ✅ CLEAN AND STANDARD (Native contextvars automatically logs all node executions!)
+# ✅ CLEAN AND STANDARD (The harness automatically injects decorators @trace_flow to log all executions)
 class MyEpicJourneyFlow(Flow):
     def __init__(self):
         node_a = MyNode()
         super().__init__(start=node_a)
 ```
 
-You will see active flow and step tracing output in stdout and inside your Langfuse dashboard showing full performance breakdowns of your runs when following this pattern.
+You will see active flow and step tracing output in stdout and inside your Langfuse dashboard showing full performance breakdowns of your runs when following this pattern.n following this pattern.
 
 ---
 
