@@ -99,6 +99,7 @@ export default function (pi: ExtensionAPI) {
         }
 
         // Load the .env file strictly from the current working directory as specified by the user
+        const parsedEnv: Record<string, string> = {};
         try {
           const envPath = resolve(ctx.cwd, ".env");
           try {
@@ -117,7 +118,7 @@ export default function (pi: ExtensionAPI) {
                       val = val.substring(0, commentIdx).trim();
                     }
                   }
-                  process.env[key] = val.replace(/^['"]|['"]$/g, "");
+                  parsedEnv[key] = val.replace(/^['"]|['"]$/g, "");
                 }
               }
             }
@@ -132,8 +133,8 @@ export default function (pi: ExtensionAPI) {
 
         // Step B: Check for Langfuse environment variables on the host
         const hasLangfuse = !!(
-          (process.env.LANGFUSE_SECRET_KEY || process.env.LANGFUSE_API_KEY) && 
-          process.env.LANGFUSE_PUBLIC_KEY
+          (parsedEnv.LANGFUSE_SECRET_KEY || parsedEnv.LANGFUSE_API_KEY || process.env.LANGFUSE_SECRET_KEY || process.env.LANGFUSE_API_KEY) &&
+          (parsedEnv.LANGFUSE_PUBLIC_KEY || process.env.LANGFUSE_PUBLIC_KEY)
         );
 
         // Check if uv is available on the machine or fallback
@@ -225,10 +226,16 @@ class TracingConfig:
     @classmethod
     def from_env(cls, env_file: Optional[str] = None) -> "TracingConfig":
         if dotenv_available:
-            load_dotenv(override=True)
-            
+            # Load specifically from the active folder's copied .env rather than global shell or root CWD!
+            # Since config.py lives under tracing/config.py, we go up two levels to get the workspace directory.
+            task_env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+            if os.path.exists(task_env_path):
+                load_dotenv(dotenv_path=task_env_path, override=True)
+            else:
+                load_dotenv(override=True)
+
         return cls(
-            langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+            langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY") or os.getenv("LANGFUSE_API_KEY"),
             langfuse_public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
             langfuse_host=os.getenv("LANGFUSE_HOST") or os.getenv("LANGFUSE_BASE_URL") or "https://cloud.langfuse.com",
             debug=os.getenv("POCKETFLOW_TRACING_DEBUG", "false").lower() == "true",
@@ -1122,14 +1129,13 @@ class AsyncStructuredNode(AsyncNode):
 
         const customEnv: Record<string, string> = {
           ...process.env as Record<string, string>, // Forward host variables
-          POCKETFLOW_TRACING_DEBUG: process.env.POCKETFLOW_TRACING_DEBUG || "false",
+          ...parsedEnv, // Explicitly load latest parsed dotenv variables securely!
+          POCKETFLOW_TRACING_DEBUG: parsedEnv.POCKETFLOW_TRACING_DEBUG || process.env.POCKETFLOW_TRACING_DEBUG || "false",
         };
         // Avoid setting empty strings as they contaminate and override python load_dotenv behaviour
-        if (process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST) {
-          const hostVal = process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST;
-          if (hostVal) {
-            customEnv.LANGFUSE_HOST = hostVal;
-          }
+        const hostVal = parsedEnv.LANGFUSE_BASE_URL || parsedEnv.LANGFUSE_HOST || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST;
+        if (hostVal) {
+          customEnv.LANGFUSE_HOST = hostVal;
         }
         if (customEnv.VIRTUAL_ENV) {
           delete customEnv.VIRTUAL_ENV;
