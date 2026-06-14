@@ -743,7 +743,6 @@ def call_llm(prompt):
         // Step E: Install any required dependencies
         const allRequirements = [
           "instructor",
-          "pydantic>=2.0.0",
           "python-dotenv>=1.0.0",
           ...params.requirements,
         ];
@@ -1131,6 +1130,7 @@ class AsyncStructuredNode(AsyncNode):
           ...process.env as Record<string, string>, // Forward host variables
           ...parsedEnv, // Explicitly load latest parsed dotenv variables securely!
           POCKETFLOW_TRACING_DEBUG: parsedEnv.POCKETFLOW_TRACING_DEBUG || process.env.POCKETFLOW_TRACING_DEBUG || "false",
+          PYTHONPATH: taskDir, // Ensure task directory is on PYTHONPATH so local pocketflow can be imported securely!
         };
         // Avoid setting empty strings as they contaminate and override python load_dotenv behaviour
         const hostVal = parsedEnv.LANGFUSE_BASE_URL || parsedEnv.LANGFUSE_HOST || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST;

@@ -233,7 +233,7 @@ class ProcessNode(Node):
 ### 5. Running Workflows On-The-Fly with `uv` (Astral)
 For instant dependency loading and sandboxed execution without manually creating virtual environments or configuring requirements:
 * Declare any external dependencies using PEP 723 inline script metadata at the top of `main.py` inside the parameters.
-* **CRITICAL**: Always include `"pocketflow"` in the script `dependencies` metadata list! Because `uv run` isolates execution libraries, if `"pocketflow"` is omitted, nested script imports of `flow` and `nodes` will trigger `ModuleNotFoundError: No module named 'pocketflow'`.
+* **CRITICAL**: Do **NOT** include `"pocketflow"` or `"pydantic"` in the script `dependencies` metadata list! The `pocketflow` core framework is written locally inside the sandboxed workspace folder upon execution, so it is loaded as a local package directly from the working directory. `"pydantic"` is transitively included as a dependency of `"instructor"`.
 * The harness extension will automatically detect `uv` and run the script inside an isolated sandbox using `uv run main.py`. If you do not provide inline script metadata, the harness dynamically supplies requirements using `--with <deps>` flags.
 * You can also specify target Python version bounds explicitly on-the-fly (`requires-python = ">=3.12"`). `uv` will automatically download and utilize the desired Python version in isolation if needed!
 
@@ -243,8 +243,7 @@ For instant dependency loading and sandboxed execution without manually creating
 # dependencies = [
 #     "beautifulsoup4",
 #     "httpx",
-#     "instructor",
-#     "pocketflow"
+#     "instructor"
 # ]
 # ///
 
