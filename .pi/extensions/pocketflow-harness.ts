@@ -98,32 +98,26 @@ export default function (pi: ExtensionAPI) {
             .join(delimiter);
         }
 
-        // Load .env files from multiple possible locations manually to avoid dependency issues
+        // Load the .env file strictly from the current working directory as specified by the user
         try {
-          const envPaths = [
-            resolve(ctx.cwd, ".env"),
-            resolve(ctx.cwd, "PocketFlow/.env"),
-            resolve(__dirname, "../../PocketFlow/.env")
-          ];
-          for (const envPath of envPaths) {
-            try {
-              const fileContent = await fs.readFile(envPath, "utf8");
-              for (const line of fileContent.split(/\r?\n/)) {
-                const trimmed = line.trim();
-                if (trimmed && !trimmed.startsWith("#")) {
-                  const parts = trimmed.split("=");
-                  if (parts.length >= 2) {
-                    const key = parts[0].trim();
-                    const val = parts.slice(1).join("=").trim().replace(/^['"]|['"]$/g, "");
-                    process.env[key] = val;
-                  }
+          const envPath = resolve(ctx.cwd, ".env");
+          try {
+            const fileContent = await fs.readFile(envPath, "utf8");
+            for (const line of fileContent.split(/\r?\n/)) {
+              const trimmed = line.trim();
+              if (trimmed && !trimmed.startsWith("#")) {
+                const parts = trimmed.split("=");
+                if (parts.length >= 2) {
+                  const key = parts[0].trim();
+                  const val = parts.slice(1).join("=").trim().replace(/^['"]|['"]$/g, "");
+                  process.env[key] = val;
                 }
               }
-              // Copy/write the file to the task directory so python-dotenv in the subprocess loads it!
-              await fs.writeFile(resolve(taskDir, ".env"), fileContent, "utf8");
-            } catch (err) {
-              // file doesn't exist or read error, ignore
             }
+            // Copy/write the file to the task directory so python-dotenv in the subprocess loads it!
+            await fs.writeFile(resolve(taskDir, ".env"), fileContent, "utf8");
+          } catch (err) {
+            // file doesn't exist or read error, ignore
           }
         } catch (e) {
           // Ignore
@@ -740,7 +734,7 @@ def call_llm(prompt):
           ...params.requirements,
         ];
         
-        // Always include langfuse package quietly to support transparent decorator compilation
+        // Always include langfuse package using locked limits matching official cookbooks!
         allRequirements.push("langfuse>=2.0.0");
         allRequirements.push("langfuse<3.0.0");
 
