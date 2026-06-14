@@ -109,8 +109,15 @@ export default function (pi: ExtensionAPI) {
                 const parts = trimmed.split("=");
                 if (parts.length >= 2) {
                   const key = parts[0].trim();
-                  const val = parts.slice(1).join("=").trim().replace(/^['"]|['"]$/g, "");
-                  process.env[key] = val;
+                  let val = parts.slice(1).join("=").trim();
+                  const commentIdx = val.indexOf("#");
+                  if (commentIdx !== -1) {
+                    const hasOpenQuote = (val.match(/'/g) || []).length % 2 !== 0 || (val.match(/"/g) || []).length % 2 !== 0;
+                    if (!hasOpenQuote) {
+                      val = val.substring(0, commentIdx).trim();
+                    }
+                  }
+                  process.env[key] = val.replace(/^['"]|['"]$/g, "");
                 }
               }
             }
@@ -758,12 +765,7 @@ def call_llm(prompt):
 import copy
 import time
 import warnings
-import uuid
-import contextvars
-from datetime import datetime
 
-# Thread-safe context var to hold the active LangfuseTracer
-_active_tracer = contextvars.ContextVar("_active_tracer", default=None)
 
 class BaseNode:
     def __init__(self):
@@ -791,25 +793,9 @@ class BaseNode:
         return self.exec(prep_res)
 
     def _run(self, shared):
-        tracer = _active_tracer.get()
-        node_id = getattr(self, "_trace_node_id", None) or str(uuid.uuid4())
-        self._trace_node_id = node_id
-        node_name = type(self).__name__
-        
-        # Safe phase trace wrapping
-        span_id = tracer.start_node_span(node_name, node_id, "exec") if tracer else None
-        p = None
-        try:
-            p = self.prep(shared)
-            e = self._exec(p)
-            res = self.post(shared, p, e)
-            if tracer and span_id:
-                tracer.end_node_span(span_id, input_data=str(p), output_data=str(res))
-            return res
-        except Exception as err:
-            if tracer and span_id:
-                tracer.end_node_span(span_id, input_data=str(p), error=err)
-            raise
+        p = self.prep(shared)
+        e = self._exec(p)
+        return self.post(shared, p, e)
 
     def run(self, shared):
         if self.successors:
@@ -824,12 +810,14 @@ class BaseNode:
             return _ConditionalTransition(self, action)
         raise TypeError("Action must be a string")
 
+
 class _ConditionalTransition:
     def __init__(self, src, action):
         self.src, self.action = src, action
 
     def __rshift__(self, tgt):
         return self.src.next(tgt, self.action)
+
 
 class Node(BaseNode):
     def __init__(self, max_retries=1, wait=0):
@@ -849,9 +837,11 @@ class Node(BaseNode):
                 if self.wait > 0:
                     time.sleep(self.wait)
 
+
 class BatchNode(Node):
     def _exec(self, items):
         return [super(BatchNode, self)._exec(i) for i in (items or [])]
+
 
 class Flow(BaseNode):
     def __init__(self, start=None):
@@ -881,35 +871,13 @@ class Flow(BaseNode):
         return last_action
 
     def _run(self, shared):
-        tracer = None
-        token = None
-        try:
-            from tracing.config import TracingConfig
-            from tracing.core import LangfuseTracer
-            config = TracingConfig.from_env()
-            if config.validate():
-                tracer = LangfuseTracer(config)
-                tracer.start_trace(type(self).__name__, shared)
-                token = _active_tracer.set(tracer)
-        except Exception:
-            pass
-
-        try:
-            p = self.prep(shared)
-            o = self._orch(shared)
-            return self.post(shared, p, o)
-        finally:
-            if tracer:
-                try:
-                    tracer.end_trace(shared, "success")
-                    tracer.flush()
-                except Exception:
-                    pass
-            if token:
-                _active_tracer.reset(token)
+        p = self.prep(shared)
+        o = self._orch(shared)
+        return self.post(shared, p, o)
 
     def post(self, shared, prep_res, exec_res):
         return exec_res
+
 
 class BatchFlow(Flow):
     def _run(self, shared):
@@ -917,6 +885,7 @@ class BatchFlow(Flow):
         for bp in pr:
             self._orch(shared, {**self.params, **bp})
         return self.post(shared, pr, None)
+
 
 class AsyncNode(Node):
     async def prep_async(self, shared):
@@ -947,37 +916,25 @@ class AsyncNode(Node):
         return await self._run_async(shared)
 
     async def _run_async(self, shared):
-        tracer = _active_tracer.get()
-        node_id = getattr(self, "_trace_node_id", None) or str(uuid.uuid4())
-        self._trace_node_id = node_id
-        node_name = type(self).__name__
-        
-        span_id = tracer.start_node_span(node_name, node_id, "exec") if tracer else None
-        p = None
-        try:
-            p = await self.prep_async(shared)
-            e = await self._exec(p)
-            res = await self.post_async(shared, p, e)
-            if tracer and span_id:
-                tracer.end_node_span(span_id, input_data=str(p), output_data=str(res))
-            return res
-        except Exception as err:
-            if tracer and span_id:
-                tracer.end_node_span(span_id, input_data=str(p), error=err)
-            raise
+        p = await self.prep_async(shared)
+        e = await self._exec(p)
+        return await self.post_async(shared, p, e)
 
     def _run(self, shared):
         raise RuntimeError("Use run_async.")
 
+
 class AsyncBatchNode(AsyncNode, BatchNode):
     async def _exec(self, items):
         return [await super(AsyncBatchNode, self)._exec(i) for i in items]
+
 
 class AsyncParallelBatchNode(AsyncNode, BatchNode):
     async def _exec(self, items):
         return await asyncio.gather(
             *(super(AsyncParallelBatchNode, self)._exec(i) for i in items)
         )
+
 
 class AsyncFlow(Flow, AsyncNode):
     async def _orch_async(self, shared, params=None):
@@ -997,35 +954,13 @@ class AsyncFlow(Flow, AsyncNode):
         return last_action
 
     async def _run_async(self, shared):
-        tracer = None
-        token = None
-        try:
-            from tracing.config import TracingConfig
-            from tracing.core import LangfuseTracer
-            config = TracingConfig.from_env()
-            if config.validate():
-                tracer = LangfuseTracer(config)
-                tracer.start_trace(type(self).__name__, shared)
-                token = _active_tracer.set(tracer)
-        except Exception:
-            pass
-
-        try:
-            p = await self.prep_async(shared)
-            o = await self._orch_async(shared)
-            return await self.post_async(shared, p, o)
-        finally:
-            if tracer:
-                try:
-                    tracer.end_trace(shared, "success")
-                    tracer.flush()
-                except Exception:
-                    pass
-            if token:
-                _active_tracer.reset(token)
+        p = await self.prep_async(shared)
+        o = await self._orch_async(shared)
+        return await self.post_async(shared, p, o)
 
     async def post_async(self, shared, prep_res, exec_res):
         return exec_res
+
 
 class AsyncBatchFlow(AsyncFlow, BatchFlow):
     async def _run_async(self, shared):
@@ -1034,6 +969,7 @@ class AsyncBatchFlow(AsyncFlow, BatchFlow):
             await self._orch_async(shared, {**self.params, **bp})
         return await self.post_async(shared, pr, None)
 
+
 class AsyncParallelBatchFlow(AsyncFlow, BatchFlow):
     async def _run_async(self, shared):
         pr = await self.prep_async(shared) or []
@@ -1041,6 +977,7 @@ class AsyncParallelBatchFlow(AsyncFlow, BatchFlow):
             *(self._orch_async(shared, {**self.params, **bp}) for bp in pr)
         )
         return await self.post_async(shared, pr, None)
+
 
 class StructuredNode(Node):
     def __init__(self, response_model, client, model="gpt-4o", max_retries=3, wait=0):
@@ -1066,6 +1003,7 @@ class StructuredNode(Node):
 
         return self.client.create(**kwargs)
 
+
 class AsyncStructuredNode(AsyncNode):
     def __init__(self, response_model, client, model="gpt-4o", max_retries=3, wait=0):
         super().__init__(max_retries=max_retries, wait=wait)
@@ -1089,7 +1027,7 @@ class AsyncStructuredNode(AsyncNode):
             kwargs["response_model"] = self.response_model
 
         return await self.client.create(**kwargs)
-`;
+`
         
         // Write the local pocketflow module directly into the sandbox folder during workflow init
         await fs.mkdir(resolve(taskDir, "pocketflow"), { recursive: true });
@@ -1188,7 +1126,10 @@ class AsyncStructuredNode(AsyncNode):
         };
         // Avoid setting empty strings as they contaminate and override python load_dotenv behaviour
         if (process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST) {
-          customEnv.LANGFUSE_HOST = process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST || "";
+          const hostVal = process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST;
+          if (hostVal) {
+            customEnv.LANGFUSE_HOST = hostVal;
+          }
         }
         if (customEnv.VIRTUAL_ENV) {
           delete customEnv.VIRTUAL_ENV;
