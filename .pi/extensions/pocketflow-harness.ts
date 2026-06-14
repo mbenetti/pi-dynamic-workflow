@@ -1104,15 +1104,11 @@ class AsyncStructuredNode(AsyncNode):
 
         let execCmd = "";
         if (useUv) {
-          // If the generated code specifies PEP 723 script metadata inline, uv will automatically resolve it!
-          // We only need to provide --with parameters for requirements not declared inside the script.
-          // Add --no-cache to bypass Windows cache index / access denied lock issues
-          if (hasPEPMetadata) {
-            execCmd = `"${uvPath}" run --no-cache main.py`;
-          } else {
-            const withFlags = allRequirements.map(req => `--with "${req}"`).join(" ");
-            execCmd = `"${uvPath}" run --no-cache ${withFlags} main.py`;
-          }
+          // Add --no-cache to bypass Windows cache index / access denied lock issues.
+          // Always supply allRequirements via --with flags to ensure minimal packages
+          // (such as langfuse or python-dotenv) are loaded even if the script metadata is missing them!
+          const withFlags = allRequirements.map(req => `--with "${req}"`).join(" ");
+          execCmd = `"${uvPath}" run --no-cache ${withFlags} main.py`;
         } else {
           const isWin = process.platform === "win32";
           const binFolder = isWin ? "Scripts" : "bin";
