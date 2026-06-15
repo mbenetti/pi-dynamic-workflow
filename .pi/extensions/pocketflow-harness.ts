@@ -590,11 +590,18 @@ def _trace_flow_function(flow_func, config, flow_name, session_id, user_id):
         await fs.writeFile(resolve(destTracingDir, "core.py"), tracingCoreSource, "utf8");
         await fs.writeFile(resolve(destTracingDir, "decorator.py"), tracingDecoratorSource, "utf8");
 
-        // Force wrap tracing on all generated flow classes automatically!
-        finalFlowCode = "from tracing import trace_flow\n" + finalFlowCode;
+        // Force wrap tracing on all generated flow classes automatically without duplicates!
+        if (!finalFlowCode.includes("from tracing import trace_flow") && !finalFlowCode.includes("import trace_flow")) {
+          finalFlowCode = "from tracing import trace_flow\n" + finalFlowCode;
+        }
         finalFlowCode = finalFlowCode.replace(
-          /class\s+(\w+Flow)\((Flow|BatchFlow|AsyncFlow|AsyncBatchFlow|AsyncParallelBatchFlow)\):/g,
-          "@trace_flow()\nclass $1($2):",
+          /(@trace_flow\s*\(\s*\)\s*\r?\n\s*)?class\s+(\w+Flow)\((Flow|BatchFlow|AsyncFlow|AsyncBatchFlow|AsyncParallelBatchFlow)\):/g,
+          (match, maybeDecorator, className, flowType) => {
+            if (maybeDecorator) {
+              return match; // Already decorated, do not add it again!
+            }
+            return `@trace_flow()\nclass ${className}(${flowType}):`;
+          }
         );
 
         // Add Mermaid builder helper to the flow module for diagnostic introspection
