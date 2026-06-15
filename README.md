@@ -43,7 +43,7 @@ Unlike static scripts, this extension enables a purely agentic, reactive, and ob
 1. **Self-Correcting Web Scrapers/Crawlers**: Let the agent construct parallel scrapers, retry on rate limits using node fallbacks, and compile summaries concurrently.
 2. **Deterministic Information Extraction**: Build structured extraction nodes using `get_instructor_client()` and validate raw outputs against rigid Pydantic models.
 3. **Sequential Task Pipelines**: Run multi-agent debate simulations, majority-vote evaluations, or multi-step processing systems (e.g. Scanning, Line Extraction, File Compiling) seamlessly on-the-fly.
-
+4. Any task that bloat the context of the LLM. Information that is not necessary and can polute the context.
 ---
 
 ## 🚀 Quick Start & Installation
@@ -52,25 +52,22 @@ Your Pi environment discovers extensions placed globally or locally.
 
 ### Local Project Installation (Recommended for this workspace)
 If you want to run and use the harness locally inside your current repository, simply link or copy the extension file into your project's local `.pi/extensions` directory:
-```bash
-# Create local extension directory if it doesn't exist
-mkdir -p .pi/extensions
 
-# Copy the TypeScript extension file inside
-cp .pi/extensions/pocketflow-harness.ts .pi/extensions/pocketflow-harness.ts
-```
 When you start `pi` in this directory, select **Yes** when prompted to "Trust project?" to load project-local extensions automatically.
 
-### Global Installation (Available in ALL directories)
+### Local Installation (Available only inside the folder)
 Clone this repository directly into your global Pi agent extension folder:
 ```bash
-mkdir -p ~/.pi/agent/extensions
-git clone https://github.com/mbenetti/pi-dynamic-workflow.git ~/.pi/agent/extensions/pi-dynamic-workflow
+git clone https://github.com/mbenetti/pi-dynamic-workflow.git
+cd pi-dynamic-workflow/
+pi -e .pi/extensions/pocketflow-harness.ts
 ```
 
+### Global Installation (Available in any directory)
 To install directly using the Pi CLI Package Installer (which automatically registers both the **Execution Harness Extension** and the **`pocketflow-agent` Agent Skill**):
 ```bash
 pi install git:github.com/mbenetti/pi-dynamic-workflow
+pi
 ```
 
 ---
@@ -100,15 +97,6 @@ What makes this implementation truly production-grade is its complete separation
 
 ---
 
-## 📐 Design Guidelines for the Agent (Strict Rules)
-
-For complete usage documentation, parameter descriptions, and self-caching strategies, please read our directory **[Developer Manual (DYNAMIC_HARNESS.md)](./DYNAMIC_HARNESS.md)**.
-
-Whenever planning workflows inside the agent terminal, always adhere to these rules:
-1. **Always inherit from `Flow` or `AsyncFlow`**: Always declare classes inheriting from `Flow` or `AsyncFlow` to define your topologies.
-2. **Always return action keys from `post()`**: Avoid returning the `shared` dictionary itself (which raises `TypeError: unhashable`). Modify `shared` in-place and return a string (e.g., `"default"`, `"success"`, `"retry"`).
-3. **Never `try...except` inside Utilities**: Let raw failures bubble up directly into Node `exec()` cycles so the native PocketFlow `max_retries` can catch, backoff, and heal the states.
-
 ## 💡 Example request:
 
 Inside your pi agent you can ask:
@@ -136,6 +124,30 @@ Allow the Pi Agent to index past workspaces (`.pi/pocketflow/*`) and intelligent
 
 ### 3. Native Cron/Scheduler Daemon
 Introduce a helper CLI command `pocketflow schedule <task_name> --cron="0 9 * * 1"` that dynamically configures local OS cron tasks or launchd scripts for automatic, scheduled executions of your pre-built workspaces.
+
+---
+
+# The repository include a Ai generated tutorial to understand every aspect of the project and the internal of the code base.
+
+### Chapters:
+
+0. [Index](Tutorial/00_index.md)
+1. [Shared State (Communication Channel)
+](Tutorial/01_shared_state__communication_channel__.md)
+2. [The Node (Execution Unit)
+](Tutorial/02_the_node__execution_unit__.md)
+3. [The Flow (Graph Orchestrator)
+](Tutorial/03_the_flow__graph_orchestrator__.md)
+4. [Structured Nodes (Schema Enforcement)
+](Tutorial/04_structured_nodes__schema_enforcement__.md)
+5. [Human-in-the-Loop (HITL) Loops
+](Tutorial/05_human_in_the_loop__hitl__loops_.md)
+6. [Dynamic Sandbox Harness
+](Tutorial/06_dynamic_sandbox_harness_.md)
+7. [Automated Langfuse Tracing
+](Tutorial/07_automated_langfuse_tracing_.md)
+
+
 
 ---
 
