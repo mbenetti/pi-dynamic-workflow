@@ -95,7 +95,7 @@ What makes this implementation truly production-grade is its complete separation
 
 ![alt text](assets/image-1.png)
 
----
+
 
 ## 💡 Example request:
 
@@ -110,24 +110,9 @@ let's create a workflow to open every pdf under C:\Users\myfolder using litepars
 
 In few seconds you will have a file with the first 10 lines of every pdf in the requested folder. **Blazing fast!**
 
----
 
-## 🗺️ Extended Roadmap (Workspace Reuse & Composition)
 
-PocketFlow Dynamic Harness is engineered to move from raw code generation to persistent execution frameworks. Future updates will focus on harvesting and composing the local sandboxed environments:
-
-### 1. Agentic Composition (Sub-Workflow Orchestration)
-Build native bridging schemas allowing new workflow nodes to import, invoke, and pass shared states directly to existing workspace flows. For example, a `MasterFlow` importing `.pi/pocketflow/scraper/flow.py` as an encapsulated subprocess.
-
-### 2. Workflow Caching (Short-Circuit Execution)
-Allow the Pi Agent to index past workspaces (`.pi/pocketflow/*`) and intelligently "short-circuit" execution. When a matching request is made, the agent will verify caching validity and execute `main.py` directly in some milliseconds, bypassing LLM compilation overhead completely.
-
-### 3. Native Cron/Scheduler Daemon
-Introduce a helper CLI command `pocketflow schedule <task_name> --cron="0 9 * * 1"` that dynamically configures local OS cron tasks or launchd scripts for automatic, scheduled executions of your pre-built workspaces.
-
----
-
-# The repository include a Ai generated tutorial to understand every aspect of the project and the internal of the code base.
+## The repository include a Ai generated tutorial to understand every aspect of the project and the internals of the code base.
 
 ### Chapters:
 
@@ -148,6 +133,18 @@ Introduce a helper CLI command `pocketflow schedule <task_name> --cron="0 9 * * 
 ](Tutorial/07_automated_langfuse_tracing_.md)
 
 
+## 🗺️ Extended Roadmap (Workspace Reuse & Composition)
+
+PocketFlow Dynamic Harness is engineered to move from raw code generation to persistent execution frameworks. Future updates will focus on harvesting and composing the local sandboxed environments:
+
+#### 1. Agentic Composition (Sub-Workflow Orchestration)
+Build native bridging schemas allowing new workflow nodes to import, invoke, and pass shared states directly to existing workspace flows. For example, a `MasterFlow` importing `.pi/pocketflow/scraper/flow.py` as an encapsulated subprocess.
+
+#### 2. Workflow Caching (Short-Circuit Execution)
+Allow the Pi Agent to index past workspaces (`.pi/pocketflow/*`) and intelligently "short-circuit" execution. When a matching request is made, the agent will verify caching validity and execute `main.py` directly in some milliseconds, bypassing LLM compilation overhead completely.
+
+#### 3. Native Cron/Scheduler Daemon
+Introduce a helper CLI command `pocketflow schedule <task_name> --cron="0 9 * * 1"` that dynamically configures local OS cron tasks or launchd scripts for automatic, scheduled executions of your pre-built workspaces.
 
 ---
 
