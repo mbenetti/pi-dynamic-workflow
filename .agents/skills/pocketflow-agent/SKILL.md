@@ -21,6 +21,56 @@ PocketFlow workflows are built on three core abstractions:
 
 ---
 
+## 📐 Step-by-Step Workflow Design Methodology
+
+Before generating any Python code, you MUST follow this structured design process to ensure the workflow is simple, clear, and architecturally sound:
+
+### 1. Requirements Analysis
+- Keep it simple and clear.
+- If the requirements are abstract or complex, break them down into concrete user stories or scenarios.
+
+### 2. Flow Design & Pattern Selection
+- Consider core agentic design patterns and apply them if they fit:
+  - **Sequential Workflow**: Simple step-by-step execution.
+  - **Map-Reduce**: Split a task into chunks (Map), process them, and merge them into a final result (Reduce).
+  - **Agentic Router**: Use an LLM to dynamically find files, select tools, or route to different nodes based on context.
+  - **RAG (Retrieval-Augmented Generation)**: Retrieve relevant documents/context before generating a response.
+- Write a concise, high-level description of the workflow.
+- Create a **Mermaid flowchart** representing the node transitions:
+  ```mermaid
+  flowchart TD
+      firstNode[First Node] --> secondNode[Second Node]
+      secondNode --> thirdNode[Third Node]
+  ```
+
+### 3. Utility Functions Definition
+- Review the available utility functions and include only the necessary ones based on the nodes in the flow.
+- Common utilities include:
+  - **Call LLM** (`utils/call_llm.py`): For standard text generation.
+  - **Get Embedding** (`utils/get_embedding.py`): For vector representations.
+
+### 4. Shared Store Design
+- Define the exact structure of the `shared` state dictionary.
+- Minimize data redundancy and keep the state clean.
+  ```python
+  shared = {
+      "input_raw_text": "...",
+      "processed_chunks": [],
+      "final_report": "..."
+  }
+  ```
+
+### 5. Node Design Specification
+- For each node in your flow, carefully specify:
+  - **Purpose**: A short explanation of the node's function.
+  - **Type**: Regular, Batch, or Async (e.g., `Node`, `BatchNode`, `AsyncNode`).
+  - **Steps**:
+    - `prep`: What keys/data it reads from the `shared` store.
+    - `exec`: What utility function or computation it executes.
+    - `post`: What keys/data it writes to the `shared` store, and what action string it returns.
+
+---
+
 ## 🌟 Key Cookbook Patterns & Examples
 
 The official [PocketFlow Cookbook Repository](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook) contains dozens of production-ready templates for advanced pipelines (e.g. `RAG`, `Supervisor`, `Majority Vote`, `Multi-Agent Debate`, `Web Crawlers`, and `Self-Healing`).
