@@ -232,18 +232,32 @@ class ProcessNode(Node):
 
 ### 5. Running Workflows On-The-Fly with `uv` (Astral)
 For instant dependency loading and sandboxed execution without manually creating virtual environments or configuring requirements:
-* Declare any external dependencies using PEP 723 inline script metadata at the top of `main.py` inside the parameters.
-* **CRITICAL**: Do **NOT** include `"pocketflow"` or `"pydantic"` in the script `dependencies` metadata list! The `pocketflow` core framework is written locally inside the sandboxed workspace folder upon execution, so it is loaded as a local package directly from the working directory. `"pydantic"` is transitively included as a dependency of `"instructor"`.
+* Declare dependencies using PEP 723 inline script metadata at the top of `main.py`.
+* **CRITICAL REQUIREMENT**: The script's inline metadata MUST always contain at least the following basic dependencies:
+  ```python
+  # /// script
+  # requires-python = ">=3.12"
+  # dependencies = [
+  #     "langfuse>=2.0.0,<3.0.0",
+  #     "python-dotenv>=1.0.0",
+  #     "pydantic>=2.0.0",
+  # ]
+  # ///
+  ```
+* These basic, core packages are guaranteed to be pre-included and automatically installed by the harness/extension. Any additional, specialized dependencies required for the specialized logic of your target workflow (e.g. `beautifulsoup4`, `httpx`, or target SDKs) should be manually added to the script dependencies list and the tool parameters list.
+* **CRITICAL**: Do **NOT** include `"pocketflow"` in the script `dependencies` metadata list! The `pocketflow` core framework is written locally inside the sandboxed workspace folder upon execution, so it is loaded as a local package directly from the working directory.
 * The harness extension will automatically detect `uv` and run the script inside an isolated sandbox using `uv run main.py`. If you do not provide inline script metadata, the harness dynamically supplies requirements using `--with <deps>` flags.
-* You can also specify target Python version bounds explicitly on-the-fly (`requires-python = ">=3.12"`). `uv` will automatically download and utilize the desired Python version in isolation if needed!
+* You can specify target Python version bounds explicitly on-the-fly (`requires-python = ">=3.12"`). `uv` will automatically download and utilize the desired Python version in isolation if needed!
 
 ```python
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
+#     "langfuse>=2.0.0,<3.0.0",
+#     "python-dotenv>=1.0.0",
+#     "pydantic>=2.0.0",
 #     "beautifulsoup4",
-#     "httpx",
-#     "instructor"
+#     "httpx"
 # ]
 # ///
 

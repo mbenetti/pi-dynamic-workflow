@@ -39,6 +39,7 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Use execute_pocketflow_workflow when a task requires multiple sequential steps, web scraping, data extraction, or parallel batch processing.",
       "Provide the complete Python code for nodes.py, flow.py, and main.py in the parameters.",
+      "CRITICAL: Always declare dependencies using PEP 723 inline script metadata at the top of main.py. Make absolutely sure you include at least: 'langfuse>=2.0.0,<3.0.0', 'python-dotenv>=1.0.0', and 'pydantic>=2.0.0'. Note that basic standard packages (python-dotenv, pydantic, langfuse, instructor) are pre-configured, but you should declare them in the inline script metadata as a fallback and add any task-specific/additional dependencies (like beautifulsoup4 or httpx) directly inside the metadata blocks or under 'requirements' array parameter.",
       "CRITICAL: Always instantiate a Flow or AsyncFlow using the parameter name 'start' (e.g., Flow(start=first_node)). Do NOT use 'start_node=first_node', as it is unsupported and will raise a TypeError.",
       "CRITICAL: The post/post_async method in any Node MUST return a string action key (e.g., 'default', 'success', 'failure') and update the shared state in-place. Do NOT return the shared dictionary itself.",
       "The generated nodes should import from 'utils.call_llm' to call the LLM or get the instructor client.",
@@ -756,14 +757,12 @@ def call_llm(prompt):
 
         // Step E: Install any required dependencies
         const allRequirements = [
-          "instructor",
+          "langfuse>=2.0.0,<3.0.0",
           "python-dotenv>=1.0.0",
+          "pydantic>=2.0.0",
+          "instructor",
           ...params.requirements,
         ];
-        
-        // Always include langfuse package using locked limits matching official cookbooks!
-        allRequirements.push("langfuse>=2.0.0");
-        allRequirements.push("langfuse<3.0.0");
 
         // Dynamically auto-inject provider-specific SDKs
         if (activeProvider === "google") {
