@@ -5,8 +5,6 @@ The **pi-dynamic-workflow** project is an on-the-fly execution and tracing envir
 By utilizing a lightweight *Dynamic Sandbox Harness* powered by the fast `uv` toolchain, it allows agents to run structured multi-step pipelines containing **Structured Nodes** (for guaranteed schema extraction) and **Human-in-the-Loop (HITL)** checkpoints. Standardized telemetry and execution metrics are automatically captured via thread-safe, decoupled **Langfuse Tracing** without crashing when credentials are absent.
 
 
-**Source Repository:** [https://github.com/mbenetti/pi-dynamic-workflow.git](https://github.com/mbenetti/pi-dynamic-workflow.git)
-
 ```mermaid
 flowchart TD
     A0["The Node (Execution Unit)
