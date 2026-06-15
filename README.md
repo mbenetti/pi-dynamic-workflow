@@ -22,7 +22,11 @@ To ensure pristine code generation and peak usability, **this package natively i
 Unlike static scripts, this extension enables a purely agentic, reactive, and observable loop: the agent plans the steps, the harness builds and executes the sandboxed graph, then streams debugging visual blueprints and tracing telemetries directly back into your development dashboards.
 
 ---
+## Project structure
 
+![alt text](assets/project_structure.png)
+
+---
 ## 🔥 Key Features & Advantages
 
 * **⚡ Decoupled & Zero-Install Autonomous**: Contains highly optimized embedded versions of both the **PocketFlow Core Engine** and the **Langfuse Tracing wrapper** dynamically populated inside every workspace sandbox. **No PyPI package installations, zero pip download lags, 100% version compatibility immunity, and completely transparent local execution without any local files of 'pocketflow-tracing'.**
