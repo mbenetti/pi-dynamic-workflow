@@ -116,21 +116,14 @@ In few seconds you will have a file with the first 10 lines of every pdf in the 
 
 ### Chapters:
 
-0. [Index](Tutorial/00_index.md)
-1. [Shared State (Communication Channel)
-](Tutorial/01_shared_state__communication_channel__.md)
-2. [The Node (Execution Unit)
-](Tutorial/02_the_node__execution_unit__.md)
-3. [The Flow (Graph Orchestrator)
-](Tutorial/03_the_flow__graph_orchestrator__.md)
-4. [Structured Nodes (Schema Enforcement)
-](Tutorial/04_structured_nodes__schema_enforcement__.md)
-5. [Human-in-the-Loop (HITL) Loops
-](Tutorial/05_human_in_the_loop__hitl__loops_.md)
-6. [Dynamic Sandbox Harness
-](Tutorial/06_dynamic_sandbox_harness_.md)
-7. [Automated Langfuse Tracing
-](Tutorial/07_automated_langfuse_tracing_.md)
+0. [Index](Tutorials/00_index.md)
+1. [Shared State (Communication Channel)](Tutorials/01_shared_state.md)
+2. [The Node (Execution Unit)](Tutorials/02_node.md)
+3. [The Flow (Graph Orchestrator)](Tutorials/03_flow.md)
+4. [Structured Nodes (Schema Enforcement)](Tutorials/04_structurednode.md)
+5. [Human-in-the-Loop (HITL) Loops](Tutorials/05_human_in_the_loop_gate.md)
+6. [Dynamic Sandbox Harness](Tutorials/06_dynamic_sandbox_harness.md)
+7. [Automated Langfuse Tracing](Tutorials/07_automated_langfuse_tracing.md)
 
 
 ## 🗺️ Extended Roadmap (Workspace Reuse & Composition)
