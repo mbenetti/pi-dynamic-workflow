@@ -234,8 +234,9 @@ class ProcessNode(Node):
 ## 📋 Guidelines for Generating Workflows
 
 0. **Workflow File Location Standard (CRITICAL)**:
-   - **ALL** nodes, flows, configuration, metadata, and execution scripts for any workflow/project **MUST** reside strictly inside the local folder under `.pi/agents/skills/pockerflow-agent/<name of the project or workflow>`.
+   - **ALL** nodes, flows, configuration, metadata, and execution scripts for any workflow/project **MUST** reside strictly inside the local folder under `.pi/agents/skills/pocketflow-agent/<name of the project or workflow>`. (Note: folder is spelled `pocketflow-agent` without 'c').
    - All related code, data, outputs, documentation, and info for that specific workflow **MUST** reside entirely inside that folder and in no other place. Do not write or generate files in the workspace root or any other location.
+   - **Output Artifacts Exception**: While source files and script definitions must live strictly in the skill's subdirectory, **any generated output files or reports intended for the end-user** should be saved using `os.getcwd()` (e.g., `os.path.join(os.getcwd(), 'report.md')`) so they load automatically inside the actively open workspace directory where the developer or user is currently working.
 
 1. **Imports**:
    - Always import nodes and flows correctly: `from pocketflow import Node, Flow, AsyncNode, AsyncFlow, StructuredNode`.
@@ -299,7 +300,9 @@ For instant dependency loading and sandboxed execution without manually creating
   # ///
   ```
 * These basic, core packages are guaranteed to be pre-included and automatically installed by the harness/extension. Any additional, specialized dependencies required for the specialized logic of your target workflow (e.g. `beautifulsoup4`, `httpx`, or target SDKs) should be manually added to the script dependencies list and the tool parameters list.
-* **CRITICAL**: Do **NOT** include `"pocketflow"` in the script `dependencies` metadata list! The `pocketflow` core framework is written locally inside the sandboxed workspace folder upon execution, so it is loaded as a local package directly from the working directory.
+* **CRITICAL FOR EXTENSION VS. BASH SEPARATION**:
+  - **When executing via the `execute_pocketflow_workflow` tool:** Do **NOT** include `"pocketflow"` in the script `dependencies` metadata list! The `pocketflow` core framework and tracing components are dynamically generated and injected by the harness extension upon execution, allowing them to be loaded as a local package directly from the working directory.
+  - **When testing your scripts manually in bash (e.g., `uv run main.py`):** Since automatic extension injection is bypassed during manual terminal execution, you should temporarily add `"pocketflow"` to the script `dependencies` list or execute using `uv run --with pocketflow main.py` to ensure standard `uv` downloads and resolves it.
 * The harness extension will automatically detect `uv` and run the script inside an isolated sandbox using `uv run main.py`. If you do not provide inline script metadata, the harness dynamically supplies requirements using `--with <deps>` flags.
 * You can specify target Python version bounds explicitly on-the-fly (`requires-python = ">=3.12"`). `uv` will automatically download and utilize the desired Python version in isolation if needed!
 
