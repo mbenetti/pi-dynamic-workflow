@@ -233,6 +233,10 @@ class ProcessNode(Node):
 
 ## 📋 Guidelines for Generating Workflows
 
+0. **Workflow File Location Standard (CRITICAL)**:
+   - **ALL** nodes, flows, configuration, metadata, and execution scripts for any workflow/project **MUST** reside strictly inside the local folder under `.pi/agents/skills/pockerflow-agent/<name of the project or workflow>`.
+   - All related code, data, outputs, documentation, and info for that specific workflow **MUST** reside entirely inside that folder and in no other place. Do not write or generate files in the workspace root or any other location.
+
 1. **Imports**:
    - Always import nodes and flows correctly: `from pocketflow import Node, Flow, AsyncNode, AsyncFlow, StructuredNode`.
    - Import LLM utilities from `utils.call_llm`: `from utils.call_llm import call_llm, get_instructor_client`.
