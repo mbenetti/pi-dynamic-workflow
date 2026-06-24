@@ -60,7 +60,7 @@ Clone this repository directly into your global Pi agent extension folder:
 ```bash
 git clone https://github.com/mbenetti/pi-dynamic-workflow.git
 cd pi-dynamic-workflow/
-pi -e .pi/extensions/pocketflow-harness.ts
+pi
 ```
 
 ### Global Installation (Available in any directory)
