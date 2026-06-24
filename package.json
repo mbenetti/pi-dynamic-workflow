@@ -5,7 +5,7 @@
   "dependencies": {},
   "pi": {
     "extensions": [
-      "./.pi/extensions/pocketflow-harness.ts"
+      "./.pi/extensions/pocketflow-harness/index.ts"
     ],
     "skills": [
       "./.agents/skills/pocketflow-agent"
