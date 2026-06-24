@@ -29,7 +29,7 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.notify("PocketFlow Dynamic Harness Extension Loaded!", "info");
   });
 
-  // Register the Custom Tool for the Pi Agent
+  // Register original tool updated with 'description' and saving 'metadata.json'
   pi.registerTool({
     name: "execute_pocketflow_workflow",
     label: "Execute PocketFlow Workflow",
@@ -39,7 +39,7 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Use execute_pocketflow_workflow when a task requires multiple sequential steps, web scraping, data extraction, or parallel batch processing.",
       "Provide the complete Python code for nodes.py, flow.py, and main.py in the parameters.",
-      "CRITICAL: Always declare dependencies using PEP 723 inline script metadata at the top of main.py. Make absolutely sure you include at least: 'langfuse>=2.0.0,<3.0.0', 'python-dotenv>=1.0.0', and 'pydantic>=2.0.0'. Note that basic standard packages (python-dotenv, pydantic, langfuse, instructor) are pre-configured, but you should declare them in the inline script metadata as a fallback and add any task-specific/additional dependencies (like beautifulsoup4 or httpx) directly inside the metadata blocks or under 'requirements' array parameter.",
+      "CRITICAL: Always declare dependencies using PEP 723 inline script metadata at the top of main.py. Make absolutely sure you include at least: 'langfuse>=2.0.0,<3.0.0', 'python-dotenv>=1.0.0', and 'pydantic>=2.0.0', and 'instructor>=1.0.0'. Note that basic standard packages (python-dotenv, pydantic, langfuse, instructor) are pre-configured, but you should declare them in the inline script metadata as a fallback.",
       "CRITICAL: Always instantiate a Flow or AsyncFlow using the parameter name 'start' (e.g., Flow(start=first_node)). Do NOT use 'start_node=first_node', as it is unsupported and will raise a TypeError.",
       "CRITICAL: The post/post_async method in any Node MUST return a string action key (e.g., 'default', 'success', 'failure') and update the shared state in-place. Do NOT return the shared dictionary itself.",
       "The generated nodes should import from 'utils.call_llm' to call the LLM or get the instructor client.",
@@ -51,6 +51,9 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       task_name: Type.String({
         description: "A short slug for the task (e.g., pricing_comparison)",
+      }),
+      description: Type.String({
+        description: "A short 1-2 sentence description explaining the objective, inputs, and outputs of this workflow.",
       }),
       nodes_code: Type.String({
         description:
@@ -132,7 +135,23 @@ export default function (pi: ExtensionAPI) {
           // Ignore
         }
 
-        // Step B: Check for Langfuse environment variables on the host
+        // Step B: Write metadata.json for rerun discoverability
+        const metadata = {
+          task_name: params.task_name,
+          description: params.description,
+          requirements: params.requirements,
+          original_query: params.original_query || "",
+          timestamp: new Date().toISOString(),
+          activeModelId,
+          activeProvider,
+        };
+        await fs.writeFile(
+          resolve(taskDir, "metadata.json"),
+          JSON.stringify(metadata, null, 2),
+          "utf8"
+        );
+
+        // Step C: Check for Langfuse environment variables on the host
         const hasLangfuse = !!(
           (parsedEnv.LANGFUSE_SECRET_KEY || parsedEnv.LANGFUSE_API_KEY || process.env.LANGFUSE_SECRET_KEY || process.env.LANGFUSE_API_KEY) &&
           (parsedEnv.LANGFUSE_PUBLIC_KEY || process.env.LANGFUSE_PUBLIC_KEY)
@@ -227,8 +246,6 @@ class TracingConfig:
     @classmethod
     def from_env(cls, env_file: Optional[str] = None) -> "TracingConfig":
         if dotenv_available:
-            # Load specifically from the active folder's copied .env rather than global shell or root CWD!
-            # Since config.py lives under tracing/config.py, we go up two levels to get the workspace directory.
             task_env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
             if os.path.exists(task_env_path):
                 load_dotenv(dotenv_path=task_env_path, override=True)
@@ -303,7 +320,7 @@ class LangfuseTracer:
                 user_id=self.config.user_id,
             )
             return self.current_trace.id
-        except Exception:
+        except Exception or BaseException:
             return None
 
     def end_trace(self, output_data: Dict[str, Any], status: str = "success") -> None:
@@ -449,7 +466,6 @@ def _trace_flow_class(flow_class, config, flow_name, session_id, user_id):
         finally:
             self._tracer.flush()
             if self._tracer.client:
-                # Give background threads a small moment to flush all batched events over the container network before standard exit
                 time.sleep(0.5)
 
     async def traced_run_async(self, shared):
@@ -466,7 +482,6 @@ def _trace_flow_class(flow_class, config, flow_name, session_id, user_id):
         finally:
             self._tracer.flush()
             if self._tracer.client:
-                # Give background threads a small moment to flush all batched events over the container network before standard exit
                 time.sleep(0.5)
             
     def patch_nodes(self):
@@ -580,7 +595,6 @@ def _trace_flow_function(flow_func, config, flow_name, session_id, user_id):
     return traced_flow_func
 `;
 
-        // COPY VIZ METADATA GENERATOR SCRIPT INTO TASKDIR FOR DIAGRAM GEN
         let finalFlowCode = params.flow_code;
 
         // Auto-inject our pre-bundled tracing structure into custom flows automatically regardless of active environment keys
@@ -713,13 +727,6 @@ def call_llm(prompt):
 `;
         } else {
           // Fallback to OpenRouter or OpenAI client
-          const apiKey = process.env.OPENROUTER_API_KEY
-            ? process.env.OPENROUTER_API_KEY
-            : process.env.OPENAI_API_KEY || "";
-          const baseUrl = process.env.OPENROUTER_API_KEY
-            ? "from openai import OpenAI\\n\\ndef get_instructor_client():\\n    return instructor.from_openai(OpenAI(base_url='https://openrouter.ai/api/v1', api_key=os.getenv('OPENROUTER_API_KEY')))"
-            : "from openai import OpenAI\\n\\ndef get_instructor_client():\\n    return instructor.from_openai(OpenAI(api_key=os.getenv('OPENAI_API_KEY')))";
-
           utilsCode = `import os
 import instructor
 from openai import OpenAI
@@ -777,14 +784,10 @@ def call_llm(prompt):
         const hasPEPMetadata = /#\s*\/\/\/\s*script/i.test(params.main_code);
 
         // DYNAMIC POCKETFLOW CORE ENGINE INJECTION
-        // This injects the exact 200-line PocketFlow core directly into the sandbox folder,
-        // making the generated workspace 100% self-contained, skipping remote pip dependencies 
-        // entirely, and preventing version incompatibilities or resolution lags.
         const pfCoreSource = `import asyncio
 import copy
 import time
 import warnings
-
 
 class BaseNode:
     def __init__(self):
@@ -829,14 +832,12 @@ class BaseNode:
             return _ConditionalTransition(self, action)
         raise TypeError("Action must be a string")
 
-
 class _ConditionalTransition:
     def __init__(self, src, action):
         self.src, self.action = src, action
 
     def __rshift__(self, tgt):
         return self.src.next(tgt, self.action)
-
 
 class Node(BaseNode):
     def __init__(self, max_retries=1, wait=0):
@@ -856,11 +857,9 @@ class Node(BaseNode):
                 if self.wait > 0:
                     time.sleep(self.wait)
 
-
 class BatchNode(Node):
     def _exec(self, items):
         return [super(BatchNode, self)._exec(i) for i in (items or [])]
-
 
 class Flow(BaseNode):
     def __init__(self, start=None):
@@ -897,14 +896,12 @@ class Flow(BaseNode):
     def post(self, shared, prep_res, exec_res):
         return exec_res
 
-
 class BatchFlow(Flow):
     def _run(self, shared):
         pr = self.prep(shared) or []
         for bp in pr:
             self._orch(shared, {**self.params, **bp})
         return self.post(shared, pr, None)
-
 
 class AsyncNode(Node):
     async def prep_async(self, shared):
@@ -942,18 +939,15 @@ class AsyncNode(Node):
     def _run(self, shared):
         raise RuntimeError("Use run_async.")
 
-
 class AsyncBatchNode(AsyncNode, BatchNode):
     async def _exec(self, items):
         return [await super(AsyncBatchNode, self)._exec(i) for i in items]
-
 
 class AsyncParallelBatchNode(AsyncNode, BatchNode):
     async def _exec(self, items):
         return await asyncio.gather(
             *(super(AsyncParallelBatchNode, self)._exec(i) for i in items)
         )
-
 
 class AsyncFlow(Flow, AsyncNode):
     async def _orch_async(self, shared, params=None):
@@ -980,14 +974,12 @@ class AsyncFlow(Flow, AsyncNode):
     async def post_async(self, shared, prep_res, exec_res):
         return exec_res
 
-
 class AsyncBatchFlow(AsyncFlow, BatchFlow):
     async def _run_async(self, shared):
         pr = await self.prep_async(shared) or []
         for bp in pr:
             await self._orch_async(shared, {**self.params, **bp})
         return await self.post_async(shared, pr, None)
-
 
 class AsyncParallelBatchFlow(AsyncFlow, BatchFlow):
     async def _run_async(self, shared):
@@ -996,7 +988,6 @@ class AsyncParallelBatchFlow(AsyncFlow, BatchFlow):
             *(self._orch_async(shared, {**self.params, **bp}) for bp in pr)
         )
         return await self.post_async(shared, pr, None)
-
 
 class StructuredNode(Node):
     def __init__(self, response_model, client, model="gpt-4o", max_retries=3, wait=0):
@@ -1009,7 +1000,7 @@ class StructuredNode(Node):
         if isinstance(prep_res, str):
             kwargs = {"messages": [{"role": "user", "content": prep_res}]}
         elif isinstance(prep_res, list):
-            kwargs = {"messages": prep_res}
+            kwargs = prep_res
         elif isinstance(prep_res, dict):
             kwargs = prep_res
         else:
@@ -1022,7 +1013,6 @@ class StructuredNode(Node):
 
         return self.client.create(**kwargs)
 
-
 class AsyncStructuredNode(AsyncNode):
     def __init__(self, response_model, client, model="gpt-4o", max_retries=3, wait=0):
         super().__init__(max_retries=max_retries, wait=wait)
@@ -1034,7 +1024,7 @@ class AsyncStructuredNode(AsyncNode):
         if isinstance(prep_res, str):
             kwargs = {"messages": [{"role": "user", "content": prep_res}]}
         elif isinstance(prep_res, list):
-            kwargs = {"messages": prep_res}
+            kwargs = prep_res
         elif isinstance(prep_res, dict):
             kwargs = prep_res
         else:
@@ -1046,7 +1036,7 @@ class AsyncStructuredNode(AsyncNode):
             kwargs["response_model"] = self.response_model
 
         return await self.client.create(**kwargs)
-`
+`;
         
         // Write the local pocketflow module directly into the sandbox folder during workflow init
         await fs.mkdir(resolve(taskDir, "pocketflow"), { recursive: true });
@@ -1081,9 +1071,9 @@ class AsyncStructuredNode(AsyncNode):
           if (process.env.VIRTUAL_ENV) {
             const normVirtualEnv = process.env.VIRTUAL_ENV.replace(/[\\/]/g, "/");
             const possiblePip = resolve(normVirtualEnv, binFolder, `pip${exeSuffix}`).replace(/[\\/]/g, "/");
-            const fs = require("node:fs");
+            const fs_local = require("node:fs");
             try {
-              fs.accessSync(possiblePip);
+              fs_local.accessSync(possiblePip);
               pipPath = possiblePip;
             } catch (e) {
               pipPath = "pip";
@@ -1110,9 +1100,6 @@ class AsyncStructuredNode(AsyncNode):
 
         let execCmd = "";
         if (useUv) {
-          // Add --no-cache to bypass Windows cache index / access denied lock issues.
-          // Always supply allRequirements via --with flags to ensure minimal packages
-          // (such as langfuse or python-dotenv) are loaded even if the script metadata is missing them!
           const withFlags = allRequirements.map(req => `--with "${req}"`).join(" ");
           execCmd = `"${uvPath}" run --no-cache ${withFlags} main.py`;
         } else {
@@ -1123,9 +1110,9 @@ class AsyncStructuredNode(AsyncNode):
           if (process.env.VIRTUAL_ENV) {
             const normVirtualEnv = process.env.VIRTUAL_ENV.replace(/[\\/]/g, "/");
             const possiblePy = resolve(normVirtualEnv, binFolder, `python${exeSuffix}`).replace(/[\\/]/g, "/");
-            const fs = require("node:fs");
+            const fs_local = require("node:fs");
             try {
-              fs.accessSync(possiblePy);
+              fs_local.accessSync(possiblePy);
               pyPath = possiblePy;
             } catch (e) {
               pyPath = "python";
@@ -1141,7 +1128,6 @@ class AsyncStructuredNode(AsyncNode):
           POCKETFLOW_TRACING_DEBUG: parsedEnv.POCKETFLOW_TRACING_DEBUG || process.env.POCKETFLOW_TRACING_DEBUG || "false",
           PYTHONPATH: taskDir, // Ensure task directory is on PYTHONPATH so local pocketflow can be imported securely!
         };
-        // Avoid setting empty strings as they contaminate and override python load_dotenv behaviour
         const hostVal = parsedEnv.LANGFUSE_BASE_URL || parsedEnv.LANGFUSE_HOST || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST;
         if (hostVal) {
           customEnv.LANGFUSE_HOST = hostVal;
@@ -1158,7 +1144,7 @@ class AsyncStructuredNode(AsyncNode):
         });
 
         // Step G: Dynamic Mermaid blueprint visualization injection if configured
-        const wantVisualize = true; // FORCE VISUALIZATION OUTPUT AS REQUESTED BY USER
+        const wantVisualize = true;
         if (wantVisualize) {
           try {
             // Write a temporary introspector engine inside our task-dir
@@ -1184,7 +1170,6 @@ if flow_classes:
     print(mermaid_diagram)
     print("===END_BLUEPRINT===")
 `;
-            // Append temporary introspector metadata run
             await fs.writeFile(resolve(taskDir, "_introspect_graph.py"), introspectorScript, "utf8");
 
             const isWin = process.platform === "win32";
@@ -1194,19 +1179,15 @@ if flow_classes:
             if (process.env.VIRTUAL_ENV) {
               const normVirtualEnv = process.env.VIRTUAL_ENV.replace(/[\\/]/g, "/");
               const possiblePy = resolve(normVirtualEnv, binFolder, `python${exeSuffix}`).replace(/[\\/]/g, "/");
-              const fs = require("node:fs");
+              const fs_local = require("node:fs");
               try {
-                fs.accessSync(possiblePy);
+                fs_local.accessSync(possiblePy);
                 pPath = possiblePy;
               } catch (e) {
                 pPath = "python";
               }
             }
-            // Since we are running the introspection script with uv, we need to make sure 
-            // that the subdirectory 'pocketflow' inside taskDir can be loaded properly.
-            // Let's copy it or link it so 'import pocketflow' inside introspect engine works cleanly if using uv!
-            // When using "uv run", it executes within taskDir but may need an empty python project setup or package requirements if it fails due to resolving.
-            // Actually, we can run "uv run python _introspect_graph.py" to utilize the local directory's python packages properly!
+            
             let introspectCmd = "";
             if (useUv) {
               if (hasPEPMetadata) {
@@ -1225,13 +1206,16 @@ if flow_classes:
             }
             const introspectRes = await execAsync(introspectCmd, { cwd: taskDir, env: introspectEnv });
             await fs.writeFile(resolve(taskDir, "_introspect_debug.log"), `STDOUT:\n${introspectRes.stdout}\n\nSTDERR:\n${introspectRes.stderr}`, "utf8");
-            console.log("INTROSPECT OUT:", introspectRes.stdout);
-            console.log("INTROSPECT ERR:", introspectRes.stderr);
+            
             const match = introspectRes.stdout.match(/===START_BLUEPRINT===([\s\S]*?)===END_BLUEPRINT===/);
             if (match && match[1]) {
               const diagramText = match[1].trim();
               
               // Compile Provenance Metadata elements
+              const descriptionBlock = params.description
+                ? `## 📝 Workflow Objective & Description\n\n${params.description.trim()}\n\n`
+                : "";
+
               const queryBlock = params.original_query 
                 ? `## 🎯 Original Prompt / Architectural Intent\n\n> ${params.original_query.trim().replace(/\n/g, "\n> ")}\n\n`
                 : "";
@@ -1240,25 +1224,18 @@ if flow_classes:
                 ? `## 🧠 Architectural Thinking Process & Design Choices\n\n${params.thinking_process.trim()}\n\n`
                 : "";
 
-              const blueprintMd = `# Workflow Blueprint: ${params.task_name}\n\nGenerated automatically via PocketFlow recursive visualization engine.\n\n${queryBlock}${thinkingBlock}## Topology Diagram\n\n\`\`\`mermaid\n${diagramText}\n\`\`\`\n\n## 📄 Workspace Source Code Auditing\n\n### \`nodes.py\`\n\n\`\`\`python\n${params.nodes_code.trim()}\n\`\`\`\n\n### \`flow.py\`\n\n\`\`\`python\n${params.flow_code.trim()}\n\`\`\`\n\n### \`main.py\`\n\n\`\`\`python\n${params.main_code.trim()}\n\`\`\`\n`;
-        // Write blueprint cleanly to an isolated md file inside the workspace
-        // Let's print the blueprint diagram to stderr/stdout so it is visible in the result output, as well as saving!
-        console.log("WROTE BLUEPRINT DIAGRAM: ", diagramText);
-        // Force the output path to end in blueprint.md, cleanly resolved against ctx.cwd
-        const customBlueprintPath = resolve(ctx.cwd, `${params.task_name}_blueprint.md`).replace(/[\\/]/g, "/");
-        await fs.writeFile(customBlueprintPath, blueprintMd, "utf8");
-        
-        // Also save a copy directly inside the sandbox taskDir so it propagates permanently !
-        await fs.writeFile(resolve(taskDir, "PROVENANCE.md"), blueprintMd, "utf8");
-        
-        ctx.ui.notify(`Workspace blueprint and provenance saved to ${params.task_name}_blueprint.md`, "info");
+              const blueprintMd = `# Workflow Blueprint: ${params.task_name}\n\nGenerated automatically via PocketFlow recursive visualization engine.\n\n${descriptionBlock}${queryBlock}${thinkingBlock}## Topology Diagram\n\n\`\`\`mermaid\n${diagramText}\n\`\`\`\n\n## 📄 Workspace Source Code Auditing\n\n### \`nodes.py\`\n\n\`\`\`python\n${params.nodes_code.trim()}\n\`\`\`\n\n### \`flow.py\`\n\n\`\`\`python\n${params.flow_code.trim()}\n\`\`\`\n\n### \`main.py\`\n\n\`\`\`python\n${params.main_code.trim()}\n\`\`\`\n`;
+              const customBlueprintPath = resolve(ctx.cwd, `${params.task_name}_blueprint.md`).replace(/[\\/]/g, "/");
+              await fs.writeFile(customBlueprintPath, blueprintMd, "utf8");
+              await fs.writeFile(resolve(taskDir, "PROVENANCE.md"), blueprintMd, "utf8");
+              
+              ctx.ui.notify(`Workspace blueprint and provenance saved to ${params.task_name}_blueprint.md`, "info");
             }
           } catch (e: any) {
             // Silence visualizer fallback error quietly
           }
         }
 
-        // Clear status
         ctx.ui.setStatus("pocketflow", undefined);
 
         return {
@@ -1274,7 +1251,6 @@ if flow_classes:
         ctx.ui.setStatus("pocketflow", undefined);
         ctx.ui.notify(`Workflow execution failed: ${error.message}`, "error");
 
-        // Return the error traceback back to Gemini for self-healing
         throw new Error(
           `Workflow execution failed.\n\n**Error:**\n${error.message}\n\n**Stderr:**\n${error.stderr || ""}\n\n**Stdout:**\n${error.stdout || ""}`,
         );
@@ -1282,14 +1258,337 @@ if flow_classes:
     },
   });
 
-  // 4. Register a Slash Command for manual runs
+  // New Tool B: list_pocketflow_workflows
+  pi.registerTool({
+    name: "list_pocketflow_workflows",
+    label: "List PocketFlow Workflows",
+    description: "Lists all available cached PocketFlow workflows along with their descriptions, parameters, and design details.",
+    parameters: Type.Object({}),
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const baseDir = resolve(ctx.cwd, ".pi/pocketflow").replace(/[\\/]/g, "/");
+      try {
+        const entries = await fs.readdir(baseDir, { withFileTypes: true });
+        const folders = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+
+        const list: any[] = [];
+        for (const f of folders) {
+          try {
+            const metaContent = await fs.readFile(resolve(baseDir, f, "metadata.json"), "utf8");
+            list.push(JSON.parse(metaContent));
+          } catch (e) {
+            list.push({
+              task_name: f,
+              description: "Workflow with no metadata.json on disk.",
+              requirements: [],
+            });
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `### Available Saved Workflows\n\n${list
+                .map(
+                  (item) =>
+                    `* **\`${item.task_name}\`**: ${item.description || "No description provided."}\n  * Last Run: \`${item.timestamp || "unknown"}\`\n  * Prompt Intent: *"${item.original_query ? item.original_query.substring(0, 80) : "N/A"}..."*`,
+                )
+                .join("\n")}`,
+            },
+          ],
+          details: { workflows: list },
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text", text: `Error listing workflows: ${err.message}` }],
+          details: { error: err.message },
+        };
+      }
+    },
+  });
+
+  // New Tool C: rerun_pocketflow_workflow
+  pi.registerTool({
+    name: "rerun_pocketflow_workflow",
+    label: "Rerun PocketFlow Workflow",
+    description: "Reruns a previously saved PocketFlow workflow by task name, preserving the environment and run parameters completely.",
+    parameters: Type.Object({
+      task_name: Type.String({
+        description: "The unique slug parameter matching the folder name of the workflow to execute.",
+      }),
+    }),
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const taskDir = resolve(ctx.cwd, `.pi/pocketflow/${params.task_name}`).replace(/[\\/]/g, "/");
+      ctx.ui.setStatus("pocketflow", `Rerunning ${params.task_name}...`);
+
+      try {
+        // Load dotenv config
+        const parsedEnv: Record<string, string> = {};
+        try {
+          const envPath = resolve(ctx.cwd, ".env");
+          const fileContent = await fs.readFile(envPath, "utf8");
+          for (const line of fileContent.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith("#")) {
+              const parts = trimmed.split("=");
+              if (parts.length >= 2) {
+                const key = parts[0].trim();
+                let val = parts.slice(1).join("=").trim();
+                const commentIdx = val.indexOf("#");
+                if (commentIdx !== -1) {
+                  const hasOpenQuote = (val.match(/'/g) || []).length % 2 !== 0 || (val.match(/"/g) || []).length % 2 !== 0;
+                  if (!hasOpenQuote) {
+                    val = val.substring(0, commentIdx).trim();
+                  }
+                }
+                parsedEnv[key] = val.replace(/^['"]|['"]$/g, "");
+              }
+            }
+          }
+        } catch (e) { /* ignore */ }
+
+        // Clean env variables
+        if (process.env.VIRTUAL_ENV) {
+          delete process.env.VIRTUAL_ENV;
+        }
+        if (process.env.PATH) {
+          process.env.PATH = process.env.PATH.split(delimiter)
+            .filter((p) => !p.includes("pocketflow-tracing"))
+            .join(delimiter);
+        }
+
+        const customEnv: Record<string, string> = {
+          ...process.env as Record<string, string>,
+          ...parsedEnv,
+          PYTHONPATH: taskDir,
+        };
+        if (customEnv.VIRTUAL_ENV) {
+          delete customEnv.VIRTUAL_ENV;
+        }
+
+        // Detect uv
+        let useUv = false;
+        let uvPath = "uv";
+        try {
+          const isWin = process.platform === "win32";
+          await execAsync(isWin ? "where uv" : "which uv");
+          useUv = true;
+        } catch (e) {
+          try {
+            await execAsync("uv --version");
+            useUv = true;
+          } catch (uvErr) { /* ignore */ }
+        }
+
+        // Recover requirements
+        let allRequirements = [
+          "langfuse>=2.0.0,<3.0.0",
+          "python-dotenv>=1.0.0",
+          "pydantic>=2.0.0",
+          "instructor",
+        ];
+        try {
+          const metaContent = await fs.readFile(resolve(taskDir, "metadata.json"), "utf8");
+          const meta = JSON.parse(metaContent);
+          if (meta.requirements) {
+            allRequirements = [...new Set([...allRequirements, ...meta.requirements])];
+          }
+        } catch (e) { /* ignore */ }
+
+        let execCmd = "";
+        if (useUv) {
+          const withFlags = allRequirements.map((req) => `--with "${req}"`).join(" ");
+          execCmd = `"${uvPath}" run --no-cache ${withFlags} main.py`;
+        } else {
+          execCmd = `python3 main.py`;
+        }
+
+        const { stdout, stderr } = await execAsync(execCmd, {
+          cwd: taskDir,
+          timeout: 60000,
+          maxBuffer: 25 * 1024 * 1024,
+          env: customEnv,
+        });
+
+        ctx.ui.setStatus("pocketflow", undefined);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `### Rerun Of '${params.task_name}' Successful\n\n**Stdout:**\n\`\`\`\n${stdout}\n\`\`\``,
+            },
+          ],
+          details: { stdout, stderr, success: true },
+        };
+      } catch (err: any) {
+        ctx.ui.setStatus("pocketflow", undefined);
+        throw new Error(
+          `Subprocess rerun failed for ${params.task_name}. Error: ${err.message}\n${err.stderr || ""}`,
+        );
+      }
+    },
+  });
+
+  // Interactive Slash Command for manual runs
   pi.registerCommand("pocketflow", {
-    description: "Manage or run PocketFlow dynamic workflows",
+    description: "Launch, list, or rerun PocketFlow dynamic workflows interactively",
     handler: async (args, ctx) => {
-      ctx.ui.notify(
-        `PocketFlow Harness CLI: ${args || "No arguments provided"}`,
-        "info",
+      const baseDir = resolve(ctx.cwd, ".pi/pocketflow").replace(/[\\/]/g, "/");
+      let folders: string[] = [];
+      try {
+        const entries = await fs.readdir(baseDir, { withFileTypes: true });
+        folders = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+      } catch (err) {
+        ctx.ui.notify("No pocketflow workflows exist in .pi/pocketflow yet.", "info");
+        return;
+      }
+
+      if (folders.length === 0) {
+        ctx.ui.notify("No pocketflow workflows found in .pi/pocketflow directory.", "info");
+        return;
+      }
+
+      // Compose selections list with meta details
+      const selections: { label: string; taskName: string }[] = [];
+      for (const folder of folders) {
+        try {
+          const metaContent = await fs.readFile(resolve(baseDir, folder, "metadata.json"), "utf8");
+          const meta = JSON.parse(metaContent);
+          const dateStr = meta.timestamp ? new Date(meta.timestamp).toLocaleDateString() : "unknown";
+          const dStr = meta.description ? `: ${meta.description.substring(0, 60)}...` : "";
+          selections.push({
+            label: `🔄 ${folder} (${dateStr})${dStr}`,
+            taskName: folder,
+          });
+        } catch (e) {
+          selections.push({
+            label: `🔄 ${folder} (missing metadata)`,
+            taskName: folder,
+          });
+        }
+      }
+
+      const selectedLabel = await ctx.ui.select(
+        "Select a previously saved PocketFlow workflow to execute:",
+        selections.map((val) => val.label),
       );
+
+      if (!selectedLabel) {
+        ctx.ui.notify("Rerun selection cancelled.", "info");
+        return;
+      }
+
+      const selectedObj = selections.find((val) => val.label === selectedLabel);
+      if (!selectedObj) return;
+
+      const taskName = selectedObj.taskName;
+      const taskDir = resolve(baseDir, taskName).replace(/[\\/]/g, "/");
+
+      ctx.ui.notify(`Launching saved PocketFlow workflow: '${taskName}'...`, "info");
+      ctx.ui.setStatus("pocketflow", `Running ${taskName}...`);
+
+      try {
+        // Load local environmental secrets securely
+        const parsedEnv: Record<string, string> = {};
+        try {
+          const envPath = resolve(ctx.cwd, ".env");
+          const fileContent = await fs.readFile(envPath, "utf8");
+          for (const line of fileContent.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith("#")) {
+              const parts = trimmed.split("=");
+              if (parts.length >= 2) {
+                const key = parts[0].trim();
+                let val = parts.slice(1).join("=").trim();
+                const commentIdx = val.indexOf("#");
+                if (commentIdx !== -1) {
+                  const hasOpenQuote = (val.match(/'/g) || []).length % 2 !== 0 || (val.match(/"/g) || []).length % 2 !== 0;
+                  if (!hasOpenQuote) {
+                    val = val.substring(0, commentIdx).trim();
+                  }
+                }
+                parsedEnv[key] = val.replace(/^['"]|['"]$/g, "");
+              }
+            }
+          }
+        } catch (e) { /* ignore */ }
+
+        // Sanitize pathing
+        if (process.env.VIRTUAL_ENV) {
+          delete process.env.VIRTUAL_ENV;
+        }
+        if (process.env.PATH) {
+          process.env.PATH = process.env.PATH.split(delimiter)
+            .filter((p) => !p.includes("pocketflow-tracing"))
+            .join(delimiter);
+        }
+
+        const customEnv: Record<string, string> = {
+          ...process.env as Record<string, string>,
+          ...parsedEnv,
+          PYTHONPATH: taskDir,
+        };
+        if (customEnv.VIRTUAL_ENV) {
+          delete customEnv.VIRTUAL_ENV;
+        }
+
+        // Check for uv
+        let useUv = false;
+        let uvPath = "uv";
+        try {
+          const isWin = process.platform === "win32";
+          await execAsync(isWin ? "where uv" : "which uv");
+          useUv = true;
+        } catch (e) {
+          try {
+            await execAsync("uv --version");
+            useUv = true;
+          } catch (uvErr) { /* ignore */ }
+        }
+
+        // Recover dependency list to run
+        let allRequirements = [
+          "langfuse>=2.0.0,<3.0.0",
+          "python-dotenv>=1.0.0",
+          "pydantic>=2.0.0",
+          "instructor",
+        ];
+        try {
+          const metaContent = await fs.readFile(resolve(taskDir, "metadata.json"), "utf8");
+          const meta = JSON.parse(metaContent);
+          if (meta.requirements) {
+            allRequirements = [...new Set([...allRequirements, ...meta.requirements])];
+          }
+        } catch (e) { /* ignore */ }
+
+        let execCmd = "";
+        if (useUv) {
+          const withFlags = allRequirements.map((req) => `--with "${req}"`).join(" ");
+          execCmd = `"${uvPath}" run --no-cache ${withFlags} main.py`;
+        } else {
+          execCmd = `python3 main.py`;
+        }
+
+        ctx.ui.setStatus("pocketflow", "Running subprocess...");
+        const { stdout, stderr } = await execAsync(execCmd, {
+          cwd: taskDir,
+          timeout: 60000,
+          maxBuffer: 25 * 1024 * 1024,
+          env: customEnv,
+        });
+
+        ctx.ui.setStatus("pocketflow", undefined);
+        ctx.ui.notify(`Saved workflow ${taskName} completed successfully!`, "info");
+
+        // Write outputs directly to standard terminal logs stream
+        console.log(`\n=========================================\n🔄 RERUN OUTPUT: [${taskName}]\n=========================================\n${stdout}\n=========================================\n`);
+        ctx.ui.notify("Check task terminal prints stream for standard log values.", "info");
+
+      } catch (err: any) {
+        ctx.ui.setStatus("pocketflow", undefined);
+        ctx.ui.notify(`Saved workflow execution failed: ${err.message}`, "error");
+      }
     },
   });
 }
