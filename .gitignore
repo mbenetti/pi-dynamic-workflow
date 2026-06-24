@@ -8,3 +8,4 @@ instructor/
 .venv/
 .pi/
 
+.pi/pocketflow/workspace_md_scanner/

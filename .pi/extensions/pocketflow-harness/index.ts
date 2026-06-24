@@ -7,6 +7,10 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
+function stripAnsi(str: string): string {
+  return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+}
+
 export default function (pi: ExtensionAPI) {
   // Store active model and provider dynamically
   let activeModelId = "google/gemini-3.5-flash";
@@ -1242,10 +1246,10 @@ if flow_classes:
           content: [
             {
               type: "text",
-              text: `### Workflow Execution Successful\n\n**Stdout:**\n\`\`\`\n${stdout}\n\`\`\``,
+              text: `### Workflow Execution Successful\n\n**Stdout:**\n\`\`\`\n${stripAnsi(stdout)}\n\`\`\``,
             },
           ],
-          details: { stdout, stderr, success: true },
+          details: { stdout: stripAnsi(stdout), stderr: stripAnsi(stderr), success: true },
         };
       } catch (error: any) {
         ctx.ui.setStatus("pocketflow", undefined);
@@ -1416,10 +1420,10 @@ if flow_classes:
           content: [
             {
               type: "text",
-              text: `### Rerun Of '${params.task_name}' Successful\n\n**Stdout:**\n\`\`\`\n${stdout}\n\`\`\``,
+              text: `### Rerun Of '${params.task_name}' Successful\n\n**Stdout:**\n\`\`\`\n${stripAnsi(stdout)}\n\`\`\``,
             },
           ],
-          details: { stdout, stderr, success: true },
+          details: { stdout: stripAnsi(stdout), stderr: stripAnsi(stderr), success: true },
         };
       } catch (err: any) {
         ctx.ui.setStatus("pocketflow", undefined);
@@ -1582,7 +1586,7 @@ if flow_classes:
         ctx.ui.notify(`Saved workflow ${taskName} completed successfully!`, "info");
 
         // Write outputs directly to standard terminal logs stream
-        console.log(`\n=========================================\n🔄 RERUN OUTPUT: [${taskName}]\n=========================================\n${stdout}\n=========================================\n`);
+        console.log(`\n=========================================\n🔄 RERUN OUTPUT: [${taskName}]\n=========================================\n${stripAnsi(stdout)}\n=========================================\n`);
         ctx.ui.notify("Check task terminal prints stream for standard log values.", "info");
 
       } catch (err: any) {
