@@ -296,6 +296,7 @@ For instant dependency loading and sandboxed execution without manually creating
   #     "langfuse>=2.0.0,<3.0.0",
   #     "python-dotenv>=1.0.0",
   #     "pydantic>=2.0.0",
+  #     "instructor>=1.0.0",
   # ]
   # ///
   ```
@@ -313,6 +314,7 @@ For instant dependency loading and sandboxed execution without manually creating
 #     "langfuse>=2.0.0,<3.0.0",
 #     "python-dotenv>=1.0.0",
 #     "pydantic>=2.0.0",
+#     "instructor>=1.0.0",
 #     "beautifulsoup4",
 #     "httpx"
 # ]
