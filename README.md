@@ -146,10 +146,7 @@ PocketFlow Dynamic Harness is engineered to move from raw code generation to per
 #### 1. Agentic Composition (Sub-Workflow Orchestration)
 Build native bridging schemas allowing new workflow nodes to import, invoke, and pass shared states directly to existing workspace flows. For example, a `MasterFlow` importing `.pi/pocketflow/scraper/flow.py` as an encapsulated subprocess.
 
-#### 2. Workflow Caching (Short-Circuit Execution)
-Allow the Pi Agent to index past workspaces (`.pi/pocketflow/*`) and intelligently "short-circuit" execution. When a matching request is made, the agent will verify caching validity and execute `main.py` directly in some milliseconds, bypassing LLM compilation overhead completely.
-
-#### 3. Native Cron/Scheduler Daemon
+#### 2. Native Cron/Scheduler Daemon
 Introduce a helper CLI command `pocketflow schedule <task_name> --cron="0 9 * * 1"` that dynamically configures local OS cron tasks or launchd scripts for automatic, scheduled executions of your pre-built workspaces.
 
 ---
