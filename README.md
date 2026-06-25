@@ -29,12 +29,25 @@ Unlike static scripts, this extension enables a purely agentic, reactive, and ob
 ---
 ## 🔥 Key Features & Advantages
 
+* **🔄 Interactive Workspace Rerun (New!)**: Rerun your compiled sandboxes at any time. Features manual TUI arrow-key selectors (`/pocketflow` Slash Command) and agent-driven recalls (*"Rerun workspace_md_scanner"*).
+* **⚙️ Persistent Metadata Indexing (New!)**: Programmatically compiles a `metadata.json` descriptor file within every sandbox, preserving descriptive objectives, inputs, outputs, and dependencies for future auditing.
 * **⚡ Decoupled & Zero-Install Autonomous**: Contains highly optimized embedded versions of both the **PocketFlow Core Engine** and the **Langfuse Tracing wrapper** dynamically populated inside every workspace sandbox. **No PyPI package installations, zero pip download lags, 100% version compatibility immunity, and completely transparent local execution without any local files of 'pocketflow-tracing'.**
 * **📈 Transparent Langfuse Telemetry**: Automatically instruments flows natively using thread-safe `contextvars`. Generates deep spans, execution run metrics, model token cost summaries, and error logs directly to your local or cloud **Langfuse** dashboard. If tracking is disabled or credentials are omitted, tracing gracefully runs in quiet/no-op mode with no runtime overhead or import errors.
 * **🎨 Mermaid Topology Blueprints**: On successful execution, it introspects the dynamic graph and outputs a clean Markdown-compatible `*_blueprint.md` flowchart showing your exact node connections.
 * **🔎 Workspace Auditing Logs**: In addition to Mermaid graphs, the generated workflow blueprints automatically append formatted copy-pastes of the raw generated Python source code (`nodes.py`, `flow.py`, `main.py`) for pristine auditing trails.
 * **🔌 Active LLM Syncing**: No API key hardcoding required. The sandboxed workspace utils seamlessly inherit whichever active model provider (e.g. OpenAI, Anthropic, Gemini, OpenRouter) and keys are currently selected in your `pi` agent chat workspace.
 * **📦 Blazing Fast Runs**: Deep integration with **Astral `uv`** (if present on your `$PATH`) runs dynamic environments with isolated dependencies instantly.
+
+---
+
+## 🔄 Interactive Rerun & Workspace Discovery
+
+To convert dynamic workflow generation from one-time "disposable" scripts into a **persistent, reusable workbench**, the harness now includes built-in state logging, slash commands, and agent-driven rerun capabilities:
+
+* **⚙️ Persistent Metadata Logging**: Every workflow execution automatically compiles and saves a `metadata.json` descriptor file within its sandbox directory. This preserves task names, user descriptions, requirements, and timestamps.
+* **📱 Manual Slash Command (`/pocketflow`)**: Launch your saved workflows manually at any time! Type `/pocketflow` directly in your Pi console to pull open a beautiful, arrow-key interactive TUI selection menu displaying your saved workflows and descriptions. Press enter to spin up the subprocess instantly with live ANSI-scrubbed logger outputs streamed directly to your terminal.
+* **🤖 LLM Agent-Driven Recalls**: Want to run a workspace workflow conversationally? Simply ask the agent: *"Rerun workspace_md_scanner"*. The agent will invoke the registered `rerun_pocketflow_workflow` tool, and the Pi harness will execute the task, presenting the results inside a beautiful collapsible tool box with its collapsible icons.
+* **📂 Workspace Discoverability**: The LLM agent can call `list_pocketflow_workflows` to list all available cached workflows along with their objective descriptions and original prompts.
 
 ---
 
