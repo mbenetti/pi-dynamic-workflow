@@ -4,6 +4,7 @@ import { resolve, dirname, delimiter } from "node:path";
 import { promises as fs } from "node:fs";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { Key, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 const execAsync = promisify(exec);
 
@@ -1454,39 +1455,105 @@ if flow_classes:
       }
 
       // Compose selections list with meta details
-      const selections: { label: string; taskName: string }[] = [];
+      interface SelectionItem {
+        taskName: string;
+        description: string;
+        timestamp?: string;
+      }
+      const selections: SelectionItem[] = [];
       for (const folder of folders) {
         try {
           const metaContent = await fs.readFile(resolve(baseDir, folder, "metadata.json"), "utf8");
           const meta = JSON.parse(metaContent);
-          const dateStr = meta.timestamp ? new Date(meta.timestamp).toLocaleDateString() : "unknown";
-          const dStr = meta.description ? `: ${meta.description.substring(0, 60)}...` : "";
           selections.push({
-            label: `🔄 ${folder} (${dateStr})${dStr}`,
             taskName: folder,
+            description: meta.description || "No description provided.",
+            timestamp: meta.timestamp || undefined,
           });
         } catch (e) {
           selections.push({
-            label: `🔄 ${folder} (missing metadata)`,
             taskName: folder,
+            description: "No metadata.json file found on disk.",
           });
         }
       }
 
-      const selectedLabel = await ctx.ui.select(
-        "Select a previously saved PocketFlow workflow to execute:",
-        selections.map((val) => val.label),
+      const taskName = await ctx.ui.custom<string | null>(
+        (tui, theme, _kb, done) => {
+          let selectedIndex = 0;
+          let expandedIndex = -1;
+
+          function refresh() {
+            tui.requestRender();
+          }
+
+          return {
+            handleInput(data: string) {
+              if (matchesKey(data, Key.up)) {
+                selectedIndex = Math.max(0, selectedIndex - 1);
+                expandedIndex = -1; // Collapse on change
+                refresh();
+              } else if (matchesKey(data, Key.down)) {
+                selectedIndex = Math.min(selections.length - 1, selectedIndex + 1);
+                expandedIndex = -1; // Collapse on change
+                refresh();
+              } else if (matchesKey(data, Key.right)) {
+                expandedIndex = selectedIndex;
+                refresh();
+              } else if (matchesKey(data, Key.left)) {
+                expandedIndex = -1;
+                refresh();
+              } else if (matchesKey(data, Key.enter)) {
+                done(selections[selectedIndex].taskName);
+              } else if (matchesKey(data, Key.escape)) {
+                done(null);
+              }
+            },
+            render(width: number): string[] {
+              const lines: string[] = [];
+              lines.push("Select a PocketFlow workflow to execute (or Esc to cancel):");
+              lines.push(theme.fg("dim", " ⬆/⬇ Select | ➡ Expand Description | ⬅ Collapse | Enter Execute"));
+              lines.push("");
+
+              selections.forEach((f, idx) => {
+                const isSelected = idx === selectedIndex;
+                const isExpanded = idx === expandedIndex;
+
+                let prefix = "  ";
+                if (isSelected) {
+                  prefix = theme.fg("accent", "➔ ");
+                }
+
+                const dateStr = f.timestamp ? new Date(f.timestamp).toLocaleDateString() : "unknown";
+                lines.push(`${prefix}📂 ${theme.fg(isSelected ? "accent" : "default", f.taskName)} (${dateStr})`);
+
+                if (f.description) {
+                  if (isSelected && isExpanded) {
+                    const wrapped = wrapTextWithAnsi(f.description, Math.max(20, width - 8));
+                    wrapped.forEach((line) => {
+                      lines.push(`     ${theme.fg("muted", line)}`);
+                    });
+                  } else {
+                    const clipped = f.description.length > 55 
+                      ? `${f.description.substring(0, 55)}... [➡ Right Arrow Expands]` 
+                      : f.description;
+                    lines.push(`     ${theme.fg(isSelected ? "accent" : "dim", clipped)}`);
+                  }
+                }
+                lines.push("");
+              });
+
+              return lines;
+            }
+          };
+        }
       );
 
-      if (!selectedLabel) {
+      if (!taskName) {
         ctx.ui.notify("Rerun selection cancelled.", "info");
         return;
       }
 
-      const selectedObj = selections.find((val) => val.label === selectedLabel);
-      if (!selectedObj) return;
-
-      const taskName = selectedObj.taskName;
       const taskDir = resolve(baseDir, taskName).replace(/[\\/]/g, "/");
 
       ctx.ui.notify(`Launching saved PocketFlow workflow: '${taskName}'...`, "info");
